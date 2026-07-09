@@ -35,21 +35,34 @@ function corsHeaders(req) {
   };
 }
 
-/* Windows에서는 claude가 claude.cmd / claude.exe 로 설치되므로 후보를 순서대로 시도 */
+const BRIDGE_VERSION = "v3";
+const IS_WIN = process.platform === "win32";
+
+/* Windows에서는 claude가 claude.cmd / claude.exe 로 설치되므로 후보를 순서대로 시도.
+   마지막 후보 __cmdexe__ 는 cmd.exe에 실행 자체를 위임하는 최후 수단(Windows 전용). */
 const BIN_CANDIDATES = [CLAUDE_BIN, "claude", "claude.cmd", "claude.exe"]
-  .filter((v, i, a) => a.indexOf(v) === i);
+  .filter((v, i, a) => a.indexOf(v) === i)
+  .concat(IS_WIN ? ["__cmdexe__"] : []);
 let resolvedBin = null;
+
+function spawnSpec(bin) {
+  if (bin === "__cmdexe__") {
+    return { cmd: process.env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", "claude -p"], opts: { windowsVerbatimArguments: true } };
+  }
+  /* .cmd/.bat 은 Node 보안 정책상 셸 경유가 필수(EINVAL 방지).
+     명령줄은 고정 문자열뿐이고 프롬프트는 stdin이라 안전합니다. */
+  const needsShell = IS_WIN && /\.(cmd|bat)$/i.test(bin);
+  return { cmd: bin, args: ["-p"], opts: needsShell ? { shell: true } : {} };
+}
 
 function trySpawn(bin, prompt) {
   return new Promise((resolve, reject) => {
-    // 프롬프트는 stdin으로 전달 → 인젝션·명령줄 길이 제한 없음.
-    // Windows의 .cmd/.bat 은 Node 보안 정책상 셸 경유가 필수(EINVAL 방지).
-    // 이때도 명령줄은 고정 문자열("claude.cmd -p")뿐이라 안전합니다.
-    const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(bin);
-    const p = spawn(bin, ["-p"], {
+    const spec = spawnSpec(bin);
+    // 프롬프트는 stdin으로 전달 → 인젝션·명령줄 길이 제한 없음
+    const p = spawn(spec.cmd, spec.args, {
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 10 * 60 * 1000,
-      ...(needsShell ? { shell: true } : {}),
+      ...spec.opts,
     });
     let out = "", err = "";
     p.stdout.on("data", d => { out += d; });
@@ -71,13 +84,17 @@ async function runClaude(prompt) {
   for (const bin of candidates) {
     try {
       const out = await trySpawn(bin, prompt);
-      resolvedBin = bin;   /* 성공한 실행 파일 기억 */
+      if (resolvedBin !== bin) console.log("  [실행 파일 확정]", bin);
+      resolvedBin = bin;   /* 성공한 실행 방식 기억 */
       return out;
     } catch (e) {
       lastErr = e;
       /* ENOENT: 이 이름은 없음 / EINVAL: 이 방식으론 실행 불가 → 다음 후보 시도 */
-      if (e.code === "ENOENT" || e.code === "EINVAL") continue;
-      throw e;                             /* 실행은 됐는데 실패 → 실제 오류 전달 */
+      if (e.code === "ENOENT" || e.code === "EINVAL") {
+        console.log("  [후보 실패]", bin, "→", e.code);
+        continue;
+      }
+      throw e;             /* 실행은 됐는데 실패 → 실제 오류 전달 */
     }
   }
   if (lastErr && (lastErr.code === "ENOENT" || lastErr.code === "EINVAL")) {
@@ -96,7 +113,7 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/ping") {
     res.writeHead(200, { ...cors, "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: true, engine: "claude-code" }));
+    res.end(JSON.stringify({ ok: true, engine: "claude-code", version: BRIDGE_VERSION }));
     return;
   }
 
@@ -126,7 +143,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log("");
-  console.log("  🏢 TRINITY AI AGENCY 브리지 가동 — http://127.0.0.1:" + PORT);
+  console.log("  🏢 TRINITY AI AGENCY 브리지 " + BRIDGE_VERSION + " 가동 — http://127.0.0.1:" + PORT);
   console.log("  픽셀 오피스 ⚙ 설정에서 위 주소를 저장하면 Claude Code(구독)로 직원들이 일합니다.");
   console.log("  종료: Ctrl+C");
   console.log("");
