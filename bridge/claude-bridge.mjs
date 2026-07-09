@@ -35,22 +35,53 @@ function corsHeaders(req) {
   };
 }
 
-function runClaude(prompt) {
+/* Windows에서는 claude가 claude.cmd / claude.exe 로 설치되므로 후보를 순서대로 시도 */
+const BIN_CANDIDATES = [CLAUDE_BIN, "claude", "claude.cmd", "claude.exe"]
+  .filter((v, i, a) => a.indexOf(v) === i);
+let resolvedBin = null;
+
+function trySpawn(bin, prompt) {
   return new Promise((resolve, reject) => {
-    // 셸을 거치지 않고 인자 배열로 실행 → 인젝션 없음
-    const p = spawn(CLAUDE_BIN, ["-p", prompt], {
-      stdio: ["ignore", "pipe", "pipe"],
+    // 셸을 거치지 않고 실행 + 프롬프트는 stdin으로 전달 → 인젝션·명령줄 길이 제한 없음
+    const p = spawn(bin, ["-p"], {
+      stdio: ["pipe", "pipe", "pipe"],
       timeout: 10 * 60 * 1000,
     });
     let out = "", err = "";
     p.stdout.on("data", d => { out += d; });
     p.stderr.on("data", d => { err += d; });
-    p.on("error", e => reject(new Error("claude 실행 실패 — Claude Code가 설치되어 있나요? (" + e.message + ")")));
+    p.on("error", e => reject(e));
     p.on("close", code => {
       if (code === 0) resolve(out.trim());
       else reject(new Error((err || out || "claude exited " + code).trim().slice(0, 300)));
     });
+    p.stdin.on("error", () => {});
+    p.stdin.write(prompt);
+    p.stdin.end();
   });
+}
+
+async function runClaude(prompt) {
+  const candidates = resolvedBin ? [resolvedBin] : BIN_CANDIDATES;
+  let lastErr = null;
+  for (const bin of candidates) {
+    try {
+      const out = await trySpawn(bin, prompt);
+      resolvedBin = bin;   /* 성공한 실행 파일 기억 */
+      return out;
+    } catch (e) {
+      lastErr = e;
+      if (e.code === "ENOENT") continue;   /* 이 이름은 없음 → 다음 후보 */
+      throw e;                             /* 실행은 됐는데 실패 → 실제 오류 전달 */
+    }
+  }
+  if (lastErr && lastErr.code === "ENOENT") {
+    throw new Error(
+      "claude 명령을 찾을 수 없습니다. ① Claude Code 설치(https://claude.com/claude-code) → " +
+      "② 새 터미널에서 `claude --version` 확인 → ③ 그 터미널에서 브리지를 다시 실행하세요."
+    );
+  }
+  throw lastErr;
 }
 
 const server = createServer(async (req, res) => {
