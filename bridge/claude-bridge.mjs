@@ -42,10 +42,14 @@ let resolvedBin = null;
 
 function trySpawn(bin, prompt) {
   return new Promise((resolve, reject) => {
-    // 셸을 거치지 않고 실행 + 프롬프트는 stdin으로 전달 → 인젝션·명령줄 길이 제한 없음
+    // 프롬프트는 stdin으로 전달 → 인젝션·명령줄 길이 제한 없음.
+    // Windows의 .cmd/.bat 은 Node 보안 정책상 셸 경유가 필수(EINVAL 방지).
+    // 이때도 명령줄은 고정 문자열("claude.cmd -p")뿐이라 안전합니다.
+    const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(bin);
     const p = spawn(bin, ["-p"], {
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 10 * 60 * 1000,
+      ...(needsShell ? { shell: true } : {}),
     });
     let out = "", err = "";
     p.stdout.on("data", d => { out += d; });
@@ -71,11 +75,12 @@ async function runClaude(prompt) {
       return out;
     } catch (e) {
       lastErr = e;
-      if (e.code === "ENOENT") continue;   /* 이 이름은 없음 → 다음 후보 */
+      /* ENOENT: 이 이름은 없음 / EINVAL: 이 방식으론 실행 불가 → 다음 후보 시도 */
+      if (e.code === "ENOENT" || e.code === "EINVAL") continue;
       throw e;                             /* 실행은 됐는데 실패 → 실제 오류 전달 */
     }
   }
-  if (lastErr && lastErr.code === "ENOENT") {
+  if (lastErr && (lastErr.code === "ENOENT" || lastErr.code === "EINVAL")) {
     throw new Error(
       "claude 명령을 찾을 수 없습니다. ① Claude Code 설치(https://claude.com/claude-code) → " +
       "② 새 터미널에서 `claude --version` 확인 → ③ 그 터미널에서 브리지를 다시 실행하세요."
