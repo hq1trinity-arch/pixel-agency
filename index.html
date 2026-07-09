@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TRINITY AI AGENCY — 픽셀 오피스</title>
+  <meta name="description" content="사장님의 지시를 받으면 AI 직원이 채용되고, 실제 Claude API로 일하고, 결재를 받는 픽셀 오피스 AI 에이전시">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="TRINITY AI AGENCY — 픽셀 오피스">
+  <meta property="og:description" content="지시를 내리면 AI 직원이 채용되어 일하는 픽셀 오피스. Claude API 연동 데모.">
+  <meta property="og:url" content="https://hq1trinity-arch.github.io/pixel-agency/">
+  <meta property="og:locale" content="ko_KR">
+
+  <style>
+    @font-face {
+      font-family: "DungGeunMo";
+      src: url("https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_2105_2@1.0/DungGeunMo.woff") format("woff");
+      font-display: swap;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+
+    :root {
+      --bg: #12121c;
+      --panel: #1c1c2b;
+      --panel2: #232338;
+      --line: #34344f;
+      --text: #e8e8f0;
+      --dim: #9a9ab5;
+      --accent: #ffd23f;
+      --green: #7cfc9b;
+      --red: #ff6b6b;
+      --blue: #6bb7ff;
+      --purple: #b58aff;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "DungGeunMo", "Courier New", monospace;
+      min-height: 100vh;
+    }
+
+    .wrap { max-width: 1160px; margin: 0 auto; padding: 20px 14px 60px; }
+
+    /* ── Header ── */
+    header { text-align: center; padding: 14px 0 4px; }
+    header h1 {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: 3px;
+      color: var(--accent);
+      text-shadow: 3px 3px 0 #7a5a00, 6px 6px 0 rgba(0,0,0,.45);
+    }
+    header p { margin: 8px 0 0; color: var(--dim); font-size: 14px; }
+    .badge {
+      display: inline-block; margin: 10px 4px 0; padding: 4px 10px;
+      border: 2px solid var(--green); color: var(--green); font-size: 12px; cursor: default;
+    }
+    .badge.ai { border-color: var(--purple); color: var(--purple); }
+
+    /* ── Command bar ── */
+    .command-bar {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px;
+      background: var(--panel); border: 3px solid var(--line); padding: 10px;
+    }
+    .command-bar input {
+      flex: 1 1 220px; min-width: 0;
+      font-family: inherit; font-size: 14px;
+      background: var(--panel2); color: var(--text);
+      border: 2px solid var(--line); padding: 10px 12px;
+    }
+    .command-bar input:focus { outline: none; border-color: var(--accent); }
+    button {
+      font-family: inherit; font-size: 13px; cursor: pointer;
+      background: var(--panel2); color: var(--text);
+      border: 2px solid var(--line); padding: 8px 12px;
+    }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    button.primary { background: var(--accent); color: #1a1400; border-color: var(--accent); font-weight: bold; }
+    button.primary:hover { background: #ffe27a; color: #1a1400; }
+    button.good { background: var(--green); color: #062810; border-color: var(--green); font-weight: bold; }
+    button.good:hover { background: #a6ffc2; color: #062810; }
+    button.bad:hover { border-color: var(--red); color: var(--red); }
+    button.active { border-color: var(--green); color: var(--green); }
+
+    /* ── Layout ── */
+    .game-area { display: flex; gap: 14px; margin-top: 14px; align-items: stretch; }
+    @media (max-width: 940px) { .game-area { flex-direction: column; } }
+
+    .screen {
+      flex: 1 1 auto; min-width: 0;
+      background: var(--panel);
+      border: 3px solid var(--line);
+      padding: 10px;
+    }
+    canvas {
+      display: block; width: 100%;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background: #0c0c14;
+    }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+    /* ── Side panel ── */
+    .side { flex: 0 0 320px; display: flex; flex-direction: column; gap: 12px; }
+    @media (max-width: 940px) { .side { flex: 1 1 auto; } }
+
+    .card { background: var(--panel); border: 3px solid var(--line); padding: 12px; }
+    .card h2 {
+      margin: 0 0 10px; font-size: 13px; letter-spacing: 1px;
+      color: var(--accent); border-bottom: 2px solid var(--line); padding-bottom: 8px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .card h2 .count { color: var(--red); font-size: 12px; }
+
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .kpi { background: var(--panel2); padding: 8px 4px; text-align: center; }
+    .kpi b { display: block; font-size: 20px; color: var(--green); }
+    .kpi span { font-size: 10px; color: var(--dim); }
+
+    .agent-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #2c2c44; font-size: 12px; }
+    .agent-row:last-child { border-bottom: none; }
+    .chip { width: 14px; height: 14px; flex: 0 0 14px; image-rendering: pixelated; }
+    .agent-name { flex: 0 0 96px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .agent-status { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .agent-status.busy { color: var(--blue); }
+    .agent-status.approval { color: var(--accent); }
+    .agent-status { flex: 1; }
+    button.fire {
+      flex: 0 0 auto; font-size: 10px; padding: 1px 5px;
+      background: transparent; border: 1px solid #3a3a55; color: #55556f;
+    }
+    button.fire:hover { border-color: var(--red); color: var(--red); }
+
+    /* approval inbox */
+    .appr-item {
+      background: var(--panel2); border: 2px solid var(--line);
+      padding: 8px; margin-bottom: 8px; cursor: pointer; font-size: 12px;
+    }
+    .appr-item:hover { border-color: var(--accent); }
+    .appr-item .t { color: var(--text); }
+    .appr-item .r { color: var(--dim); font-size: 11px; margin-top: 3px; }
+    .appr-empty { color: #55556f; font-size: 12px; }
+
+    #log { max-height: 200px; overflow-y: auto; font-size: 12px; line-height: 1.7; }
+    #log div { border-bottom: 1px dashed #2c2c44; padding: 3px 0; }
+    #log time { color: #6a6a8a; margin-right: 6px; font-size: 10px; }
+    .lg-in { color: var(--blue); }
+    .lg-assign { color: var(--text); }
+    .lg-work { color: var(--dim); }
+    .lg-hire { color: var(--purple); }
+    .lg-done { color: var(--green); }
+    .lg-err { color: var(--red); }
+
+    /* ── Modals ── */
+    .modal-bg {
+      display: none; position: fixed; inset: 0; z-index: 50;
+      background: rgba(6,6,12,.75); padding: 20px;
+      overflow-y: auto;
+    }
+    .modal-bg.open { display: flex; align-items: flex-start; justify-content: center; }
+    .modal {
+      background: var(--panel); border: 3px solid var(--line);
+      max-width: 640px; width: 100%; padding: 18px; margin-top: 4vh;
+    }
+    .modal h3 { margin: 0 0 12px; font-size: 16px; color: var(--accent); }
+    .modal .sub { color: var(--dim); font-size: 12px; margin-bottom: 10px; }
+    .modal pre {
+      background: #14141f; border: 2px solid var(--line);
+      padding: 12px; font-family: inherit; font-size: 13px; line-height: 1.8;
+      white-space: pre-wrap; word-break: break-word;
+      max-height: 46vh; overflow-y: auto; color: var(--text); margin: 0 0 12px;
+    }
+    .modal .btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    .modal textarea, .modal input[type="password"], .modal input[type="text"], .modal select {
+      width: 100%; font-family: inherit; font-size: 13px;
+      background: var(--panel2); color: var(--text);
+      border: 2px solid var(--line); padding: 9px 10px; margin-bottom: 10px;
+    }
+    .modal textarea { min-height: 70px; resize: vertical; }
+    .modal label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 5px; }
+    .note { font-size: 11px; color: #7a7a99; line-height: 1.7; margin: 8px 0 12px; }
+    .note b { color: var(--accent); }
+
+    /* ── Explainer ── */
+    .explain { margin-top: 34px; }
+    .explain h2 { font-size: 18px; color: var(--accent); letter-spacing: 1px; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
+    @media (max-width: 800px) { .steps { grid-template-columns: 1fr; } }
+    .step { background: var(--panel); border: 3px solid var(--line); padding: 16px; }
+    .step .n { color: var(--green); font-size: 13px; }
+    .step h3 { margin: 8px 0; font-size: 15px; }
+    .step p { margin: 0; font-size: 13px; color: var(--dim); line-height: 1.8; }
+    .step .now { display: inline-block; margin-top: 10px; padding: 2px 8px; font-size: 11px; border: 1px solid var(--green); color: var(--green); }
+
+    footer { margin-top: 40px; text-align: center; color: #55556f; font-size: 12px; line-height: 1.8; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>TRINITY AI AGENCY</h1>
+    <p>지시를 내리면 AI 직원이 채용되어 일하는 픽셀 오피스</p>
+    <span class="badge" id="modeBadge">시뮬레이션 모드</span>
+  </header>
+
+  <div class="command-bar">
+    <input id="cmdInput" type="text" maxlength="500"
+           placeholder="사장님, 지시를 내려주세요… (예: 신제품 홍보 블로그 글 써줘 / 인스타 캡션 5개 만들어줘)">
+    <button class="primary" id="btnCmd">지시하기</button>
+    <button id="btnSettings">⚙ API 연결</button>
+  </div>
+
+  <div class="game-area">
+    <div class="screen">
+      <canvas id="game" width="640" height="352"></canvas>
+      <div class="controls">
+        <button id="btnDemo">🎲 데모 의뢰 넣기</button>
+        <button id="spd1" class="active">▶ 1x</button>
+        <button id="spd2">▶▶ 2x</button>
+        <button id="btnPause">⏸ 일시정지</button>
+        <button id="btnAuto" class="active">데모 자동의뢰: ON</button>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h2>AGENCY STATUS</h2>
+        <div class="kpis">
+          <div class="kpi"><b id="kStaff">0</b><span>직원</span></div>
+          <div class="kpi"><b id="kWork">0</b><span>진행중</span></div>
+          <div class="kpi"><b id="kApproval">0</b><span>결재대기</span></div>
+          <div class="kpi"><b id="kDone">0</b><span>완료</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>📋 사장 결재함 <span class="count" id="apprCount"></span></h2>
+        <div id="apprList"><div class="appr-empty">결재할 문서가 없습니다.</div></div>
+      </div>
+
+      <div class="card">
+        <h2>AI 직원</h2>
+        <div id="roster"></div>
+      </div>
+
+      <div class="card">
+        <h2>📁 완료 보관함 <span class="count" id="archCount"></span></h2>
+        <div id="archList"><div class="appr-empty">승인된 결과물이 여기 보관됩니다.</div></div>
+      </div>
+
+      <div class="card">
+        <h2>업무 로그</h2>
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <section class="explain">
+    <h2>■ 이 오피스는 어떻게 굴러가나?</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="n">STEP 1 · 완료</div>
+        <h3>픽셀 오피스 + 동적 채용</h3>
+        <p>직원은 고정이 아닙니다. 사장님 지시를 매니저가 분석해서, 맞는 직무의 직원이 없으면 새 직원이 문으로 걸어 들어와 채용됩니다.</p>
+      </div>
+      <div class="step">
+        <div class="n">STEP 2 · 지금 여기</div>
+        <h3>진짜 AI 에이전트 연결</h3>
+        <p>⚙ API 연결에 본인의 Anthropic API 키를 등록하면, 직원들이 실제 Claude API로 결과물을 만들어냅니다. 키가 없으면 시뮬레이션으로 동작합니다.</p>
+        <span class="now">← 키 등록 시 활성화</span>
+      </div>
+      <div class="step">
+        <div class="n">STEP 3 · 다음</div>
+        <h3>자동화 + 결재 워크플로</h3>
+        <p>문의 폼·이메일·스케줄이 트리거가 되어 지시가 자동 접수되는 단계입니다. 지금도 모든 결과물은 사장 결재함에서 승인/반려(피드백 재작업)를 거칩니다 — human-in-the-loop의 핵심입니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    TRINITY AI AGENCY · PIXEL OFFICE<br>
+    API 키는 브라우저(localStorage)에만 저장되며 api.anthropic.com 외에는 전송되지 않습니다.
+  </footer>
+</div>
+
+<!-- 결재 모달 -->
+<div class="modal-bg" id="apprModalBg">
+  <div class="modal">
+    <h3 id="apprTitle">결재 문서</h3>
+    <div class="sub" id="apprSub"></div>
+    <pre id="apprBody"></pre>
+    <div id="rejectBox" style="display:none">
+      <label>반려 사유 / 수정 지시 (직원이 이 피드백으로 다시 작업합니다)</label>
+      <textarea id="rejectFeedback" placeholder="예: 문장을 더 짧게, 제목을 더 자극적으로"></textarea>
+    </div>
+    <div class="btns">
+      <button id="btnCopy">복사</button>
+      <button id="btnDownload">.md 다운로드</button>
+      <button class="bad" id="btnReject">반려·재작업</button>
+      <button class="good" id="btnApprove">✔ 승인</button>
+      <button id="btnApprClose">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 설정 모달 -->
+<div class="modal-bg" id="setModalBg">
+  <div class="modal">
+    <h3>⚙ 실제 AI 에이전트 연결</h3>
+    <div class="note">
+      <b>Anthropic API 키</b>를 등록하면 직원들이 실제 Claude API를 호출해 결과물을 만듭니다.
+      키는 이 브라우저의 localStorage에만 저장되고, api.anthropic.com 으로만 전송됩니다.
+      호출량만큼 본인 계정에 과금되니 주의하세요. 키 발급: console.anthropic.com
+    </div>
+    <label>API 키</label>
+    <input type="password" id="setKey" placeholder="sk-ant-api03-...">
+    <label>모델</label>
+    <select id="setModel">
+      <option value="claude-opus-4-8">claude-opus-4-8 (기본 · 고성능)</option>
+      <option value="claude-sonnet-5">claude-sonnet-5 (균형)</option>
+      <option value="claude-haiku-4-5">claude-haiku-4-5 (빠름 · 저비용)</option>
+    </select>
+    <div class="note" id="setStatus"></div>
+    <div class="btns">
+      <button class="bad" id="btnReset">오피스 초기화</button>
+      <button class="bad" id="btnKeyDelete">키 삭제</button>
+      <button id="btnKeyTest">연결 테스트</button>
+      <button class="good" id="btnKeySave">저장</button>
+      <button id="btnSetClose">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════
+   MAP  (40 x 22 tiles, 16px each = 640 x 352)
+   # wall  . wood  , carpet  d desk  b bookshelf
+   P plant S sofa  t table   W coffee I inbox  E door
+══════════════════════════════════════════════ */
+const TILE = 16, COLS = 40, ROWS = 22;
+const MAP = [
+  "########################################",
+  "#.bbbb......................#..bbbb....#",
+  "#...........................#.........P#",
+  "#...........................#..dddd....#",
+  "#..dd....dd....dd....dd.....#..........#",
+  "#......................................#",
+  "#...........................#..........#",
+  "#...........................#.........P#",
+  "#...........................############",
+  "#..dd....dd....dd....dd................#",
+  "#......................................#",
+  "#P.....................................#",
+  "#......................................#",
+  "#..dd..................................#",
+  "#......................................#",
+  "#..........................,,,,,,,,,,,,#",
+  "#..II.......................,,,,,,,,,,W#",
+  "#...........................,,SSS,,,,,,#",
+  "#...........................,,ttt,,,,,,#",
+  "#...........................,,,,,,,,,,,#",
+  "#..........................,,,,,,,,,,,P#",
+  "######EE################################",
+];
+MAP.forEach((r, i) => { if (r.length !== COLS) console.error("map row " + i + " length " + r.length); });
+
+const tileAt = (x, y) => (x < 0 || y < 0 || x >= COLS || y >= ROWS) ? "#" : MAP[y][x];
+const walkable = (x, y) => { const t = tileAt(x, y); return t === "." || t === ","; };
+const hash2 = (x, y) => ((x * 73856093) ^ (y * 19349663)) >>> 0;
+
+function findPath(sx, sy, tx, ty) {
+  if (sx === tx && sy === ty) return [];
+  const prev = new Map(), key = (x, y) => x + y * COLS;
+  const q = [[sx, sy]];
+  prev.set(key(sx, sy), null);
+  while (q.length) {
+    const [x, y] = q.shift();
+    if (x === tx && y === ty) {
+      const path = [];
+      let k = key(tx, ty);
+      while (k !== null && prev.get(k) !== null) {
+        path.push([k % COLS, Math.floor(k / COLS)]);
+        k = prev.get(k);
+      }
+      return path.reverse();
+    }
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = x + dx, ny = y + dy, k = key(nx, ny);
+      if (walkable(nx, ny) && !prev.has(k)) { prev.set(k, key(x, y)); q.push([nx, ny]); }
+    }
+  }
+  return null;
+}
+
+/* ══════════════ SPOTS ══════════════ */
+const DESK_SLOTS = [
+  { x: 3, y: 4 }, { x: 9, y: 4 }, { x: 15, y: 4 }, { x: 21, y: 4 },
+  { x: 3, y: 9 }, { x: 9, y: 9 }, { x: 15, y: 9 }, { x: 21, y: 9 },
+];
+const MANAGER_DESK = { x: 3, y: 13 };
+const BOSS_DESK    = { x: 31, y: 3 };
+const INBOX_SPOT   = { x: 5,  y: 16 };
+const APPROVAL_SPOT= { x: 32, y: 4 };
+const COFFEE_SPOT  = { x: 36, y: 16 };
+const DOOR_SPAWN   = { x: 6,  y: 20 };
+
+/* ══════════════ SETTINGS / MODE ══════════════ */
+const LS_KEY = "trinity_agency_api_key", LS_MODEL = "trinity_agency_model";
+const LS_EMP = "trinity_agency_employees", LS_ARC = "trinity_agency_archive";
+const settings = {
+  key: localStorage.getItem(LS_KEY) || "",
+  model: localStorage.getItem(LS_MODEL) || "claude-opus-4-8",
+};
+const aiMode = () => !!settings.key;
+
+/* persistent state */
+let archive = [];
+try { archive = JSON.parse(localStorage.getItem(LS_ARC) || "[]"); } catch (_) { archive = []; }
+function saveArchive() {
+  archive = archive.slice(0, 30);
+  try { localStorage.setItem(LS_ARC, JSON.stringify(archive)); } catch (_) {}
+}
+function saveEmployees() {
+  try {
+    localStorage.setItem(LS_EMP, JSON.stringify(employees.map(e => ({ roleName: e.roleName, look: e.look }))));
+  } catch (_) {}
+}
+
+/* ══════════════ CHARACTERS ══════════════ */
+const SHIRTS = ["#d65a5a","#8a5ad6","#3aa66a","#d6a23a","#4a9be0","#d65aa0","#5ad6c8","#a0d65a"];
+const HAIRCOL = ["#2b2b2b","#5a3a1e","#6b4226","#8a6a3a","#444455","#7a3a2a"];
+const SKINS = ["#f1c27d","#e8b070","#d9a066","#f6d5a0"];
+
+let agentSeq = 0;
+function makeAgent(name, roleName, chairX, chairY, deskX, deskY, look, startX, startY) {
+  return {
+    id: ++agentSeq, name, roleName,
+    look: look || {
+      hair: Math.floor(Math.random() * 5),
+      hairColor: HAIRCOL[Math.floor(Math.random() * HAIRCOL.length)],
+      shirt: SHIRTS[Math.floor(Math.random() * SHIRTS.length)],
+      skin: SKINS[Math.floor(Math.random() * SKINS.length)],
+    },
+    desk: deskX == null ? null : { x: deskX, y: deskY },
+    chair: { x: chairX, y: chairY },
+    px: (startX != null ? startX : chairX) * TILE + 8,
+    py: (startY != null ? startY : chairY) * TILE + 8,
+    dir: "down",
+    path: [], onArrive: null,
+    state: "idle",         // idle | walking | working | delivering
+    task: null, queue: [],
+    workT: 0,
+    bubble: "", bubbleT: 0, idleT: 2 + Math.random() * 5,
+    walkFrame: 0,
+  };
+}
+
+const manager = makeAgent("매니저", "업무 배분", MANAGER_DESK.x, MANAGER_DESK.y + 1, MANAGER_DESK.x, MANAGER_DESK.y,
+  { hair: 4, hairColor: "#2b2b2b", shirt: "#3d6bd6", skin: "#f1c27d" });
+const boss = makeAgent("사장", "최종 결재", 32, 2, BOSS_DESK.x, BOSS_DESK.y,
+  { hair: 0, hairColor: "#888", shirt: "#444455", skin: "#f1c27d" });
+
+let employees = [];  // dynamic!
+const allAgents = () => [manager, boss, ...employees];
+
+function freeDesk() {
+  const used = new Set(employees.map(e => e.desk && (e.desk.x + "," + e.desk.y)));
+  return DESK_SLOTS.find(d => !used.has(d.x + "," + d.y)) || null;
+}
+
+function hireEmployee(roleName) {
+  const desk = freeDesk();
+  if (!desk) return null;
+  const emp = makeAgent(roleName, roleName, desk.x, desk.y + 1, desk.x, desk.y, null, DOOR_SPAWN.x, DOOR_SPAWN.y);
+  employees.push(emp);
+  spawnSparkles(emp.px, emp.py - 8, "#b58aff");
+  log("lg-hire", "🎉 신규 채용 — " + roleName + " 출근!");
+  emp.bubble = "안녕하세요! " + roleName + "입니다"; emp.bubbleT = 3;
+  walkTo(emp, emp.chair.x, emp.chair.y, () => { tryStartNext(emp); });
+  saveEmployees();
+  buildRoster();
+  return emp;
+}
+
+function restoreEmployees() {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(LS_EMP) || "[]"); } catch (_) {}
+  for (const it of list.slice(0, DESK_SLOTS.length)) {
+    if (!it || !it.roleName) continue;
+    const desk = freeDesk();
+    if (!desk) break;
+    const emp = makeAgent(it.roleName, it.roleName, desk.x, desk.y + 1, desk.x, desk.y, it.look || null);
+    employees.push(emp);
+  }
+  if (list.length) log("lg-hire", "🏢 직원 " + employees.length + "명 출근 완료 (명단 복원)");
+}
+
+function fireEmployee(emp) {
+  if (emp.task || emp.queue.length || emp.state === "working" || emp.state === "delivering") {
+    log("lg-err", "⚠ 작업 중인 직원은 내보낼 수 없습니다 — " + emp.roleName);
+    return;
+  }
+  employees = employees.filter(e => e !== emp);
+  saveEmployees();
+  buildRoster();
+  updatePanel();
+  log("lg-work", "👋 " + emp.roleName + " 퇴사");
+}
+
+/* ══════════════ TASKS ══════════════ */
+let tasks = [], taskSeq = 0;
+let doneCount = archive.length;   /* restored from previous sessions */
+
+function newTask(instruction) {
+  const task = {
+    id: ++taskSeq,
+    instruction,
+    title: instruction.length > 18 ? instruction.slice(0, 18) + "…" : instruction,
+    roleName: null,
+    state: "inbox",     // inbox | analyzing | queued | working | approval | revising | done | failed
+    progress: 0,
+    result: null,
+    history: [],        // multi-turn for revisions
+    agent: null,
+  };
+  tasks.push(task);
+  log("lg-in", "📥 지시 접수 — " + task.title);
+  return task;
+}
+
+/* ══════════════ CLAUDE API (real AI mode) ══════════════ */
+async function apiCall(body) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": settings.key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let msg = "HTTP " + res.status;
+    try { const e = await res.json(); if (e.error && e.error.message) msg = e.error.message; } catch (_) {}
+    if (res.status === 401) msg = "API 키가 유효하지 않습니다 (401)";
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  if (data.stop_reason === "refusal") throw new Error("요청이 정책상 거절되었습니다 (refusal)");
+  return data;
+}
+
+const textOf = (data) => {
+  const b = (data.content || []).find(x => x.type === "text");
+  return b ? b.text : "";
+};
+
+async function aiClassify(instruction) {
+  const roles = [...new Set(employees.map(e => e.roleName))];
+  const data = await apiCall({
+    model: settings.model,
+    max_tokens: 300,
+    system:
+      "당신은 AI 에이전시 'TRINITY AI AGENCY'의 매니저입니다. 사장의 지시를 읽고 담당 직무와 작업 제목을 정합니다.\n" +
+      "현재 재직 중인 직원 직무 목록: " + (roles.length ? roles.join(", ") : "(없음)") + "\n" +
+      "규칙: 목록에 적합한 직무가 있으면 반드시 그 직무명을 글자 그대로 사용하세요. 없으면 이 일에 어울리는 새 직무명을 한국어 2~6자로 만드세요 (예: 카피라이터, 디자이너, 번역가, 세무상담사).",
+    messages: [{ role: "user", content: instruction }],
+    output_config: {
+      format: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: {
+            role:  { type: "string", description: "담당 직무명 (한국어 2~6자)" },
+            title: { type: "string", description: "작업 제목 (한국어 20자 이내)" },
+          },
+          required: ["role", "title"],
+          additionalProperties: false,
+        },
+      },
+    },
+  });
+  return JSON.parse(textOf(data));
+}
+
+async function aiPerform(task) {
+  const sys =
+    "당신은 AI 에이전시 'TRINITY AI AGENCY'의 " + task.roleName + "입니다. " +
+    "사장의 지시를 수행해 완성된 결과물을 한국어로 작성하세요. " +
+    "인사말이나 '다음은 ~입니다' 같은 서두·맺음말 없이 결과물 본문만 출력하세요.";
+  if (!task.history.length) task.history.push({ role: "user", content: task.instruction });
+  const data = await apiCall({
+    model: settings.model,
+    max_tokens: 8192,
+    system: sys,
+    messages: task.history,
+  });
+  const out = textOf(data);
+  task.history.push({ role: "assistant", content: out });
+  return out;
+}
+
+/* ══════════════ SIMULATION fallback ══════════════ */
+const SIM_ROLE_RULES = [
+  [/블로그|글|카피|문구|뉴스레터|캡션|제목/, "카피라이터"],
+  [/디자인|썸네일|배너|로고|카드뉴스/, "디자이너"],
+  [/문의|고객|답변|환불|리뷰|cs/i, "CS담당"],
+  [/조사|리서치|분석|트렌드|경쟁사/, "리서처"],
+  [/번역|영어|일본어|중국어/, "번역가"],
+  [/세무|세금|절세|법인/, "세무상담사"],
+  [/영상|편집|유튜브|쇼츠/, "영상편집자"],
+];
+function simClassify(instruction) {
+  for (const [re, role] of SIM_ROLE_RULES) if (re.test(instruction)) return { role, title: instruction.slice(0, 18) };
+  return { role: "만능비서", title: instruction.slice(0, 18) };
+}
+function simResult(task) {
+  return "[시뮬레이션 결과물]\n\n지시: " + task.instruction + "\n담당: " + task.roleName +
+    "\n\n⚙ API 연결 버튼에서 Anthropic API 키를 등록하면,\n이 자리에 Claude가 만든 진짜 결과물이 표시됩니다.";
+}
+
+const DEMO_INSTRUCTIONS = [
+  "신제품 홍보 블로그 초안 써줘",
+  "SNS 썸네일 문구 3개 뽑아줘",
+  "고객 환불 문의에 답변 만들어줘",
+  "경쟁사 가격 정책 리서치해줘",
+  "이번 주 뉴스레터 제목 5개 제안해줘",
+  "회사 소개 문구를 영어로 번역해줘",
+];
+
+/* ══════════════ PIPELINE ══════════════ */
+let managerBusy = false;
+
+function submitInstruction(text) {
+  text = (text || "").trim();
+  if (!text) return;
+  newTask(text);
+}
+
+function updateManagerLoop() {
+  if (managerBusy) return;
+  const task = tasks.find(t => t.state === "inbox");
+  if (!task) return;
+  managerBusy = true;
+  task.state = "analyzing";
+  walkTo(manager, INBOX_SPOT.x, INBOX_SPOT.y, async () => {
+    manager.bubble = "지시 분석 중..."; manager.bubbleT = 2.5;
+    try {
+      let cls;
+      if (aiMode()) cls = await aiClassify(task.instruction);
+      else { await simDelay(1.6); cls = simClassify(task.instruction); }
+      task.roleName = (cls.role || "만능비서").trim().slice(0, 8);
+      task.title = (cls.title || task.title).trim().slice(0, 24);
+      assignTask(task);
+    } catch (err) {
+      task.state = "failed";
+      log("lg-err", "⚠ 분석 실패 — " + err.message);
+      manager.bubble = "앗, 문제가..."; manager.bubbleT = 2;
+    }
+    walkTo(manager, manager.chair.x, manager.chair.y, () => { managerBusy = false; });
+  });
+}
+
+function assignTask(task) {
+  let emp = employees.find(e => e.roleName === task.roleName);
+  if (!emp) {
+    emp = hireEmployee(task.roleName);
+    if (!emp) {
+      emp = employees.find(e => e.state === "idle" && !e.queue.length) || employees[0];
+      if (!emp) { task.state = "failed"; log("lg-err", "⚠ 배정 실패 — 직원이 없습니다"); return; }
+      log("lg-assign", "🪑 책상이 가득! " + emp.roleName + "에게 겸직 배정");
+    }
+  }
+  task.state = "queued";
+  task.agent = emp;
+  emp.queue.push(task);
+  manager.bubble = emp.roleName + "님, 부탁해요!"; manager.bubbleT = 2;
+  log("lg-assign", "📋 매니저 → " + emp.roleName + " : " + task.title);
+  tryStartNext(emp);
+  updatePanel();
+}
+
+function tryStartNext(emp) {
+  if (emp.state !== "idle" || emp.task || !emp.queue.length) return;
+  const task = emp.queue.shift();
+  const feedback = task._feedback;   /* queued rework carries the boss feedback */
+  delete task._feedback;
+  emp.task = task;
+  task.state = "working";
+  task.progress = 0;
+  emp.bubble = (feedback ? "다시 해보겠습니다!" : "접수! " + task.title); emp.bubbleT = 2.5;
+  walkTo(emp, emp.chair.x, emp.chair.y, () => {
+    emp.state = "working";
+    emp.workT = 0;
+    runWork(emp, task, feedback);
+  });
+}
+
+async function runWork(emp, task, feedback) {
+  try {
+    let out;
+    if (aiMode()) {
+      if (feedback) task.history.push({ role: "user", content: "사장 피드백: " + feedback + "\n피드백을 반영해 결과물을 다시 작성하세요." });
+      out = await aiPerform(task);
+    } else {
+      await simDelay(8 + Math.random() * 6);
+      out = feedback ? simResult(task) + "\n\n(피드백 반영: " + feedback + ")" : simResult(task);
+    }
+    if (emp.task !== task) return;
+    task.result = out;
+    task.progress = 100;
+    finishWork(emp, task);
+  } catch (err) {
+    if (emp.task !== task) return;
+    task.state = "failed";
+    emp.task = null; emp.state = "idle";
+    log("lg-err", "⚠ " + emp.roleName + " 작업 실패 — " + err.message);
+    emp.bubble = "죄송합니다..."; emp.bubbleT = 2.5;
+    tryStartNext(emp);
+    updatePanel();
+  }
+}
+
+function finishWork(emp, task) {
+  emp.state = "delivering";
+  log("lg-work", "📝 " + emp.roleName + " 작업 완료 — " + task.title);
+  walkTo(emp, APPROVAL_SPOT.x, APPROVAL_SPOT.y, () => {
+    emp.bubble = "결재 부탁드립니다!"; emp.bubbleT = 2.2;
+    task.state = "approval";
+    emp.task = null;
+    setTimeoutSim(1.2, () => walkTo(emp, emp.chair.x, emp.chair.y, () => { emp.state = "idle"; tryStartNext(emp); }));
+    renderApprovals(); updatePanel();
+  });
+}
+
+function approveTask(task) {
+  if (task.state !== "approval") return;
+  task.state = "done";
+  doneCount++;
+  archive.unshift({
+    title: task.title, roleName: task.roleName,
+    instruction: task.instruction, result: task.result, ts: Date.now(),
+  });
+  saveArchive();
+  renderArchive();
+  boss.bubble = "승인! ✔"; boss.bubbleT = 2;
+  stampFx = 0.7;
+  spawnSparkles(BOSS_DESK.x * TILE + 24, BOSS_DESK.y * TILE, "#7cfc9b");
+  log("lg-done", "✅ 사장 승인 — " + task.title);
+  renderApprovals(); updatePanel();
+}
+
+function rejectTask(task, feedback) {
+  if (task.state !== "approval") return;
+  task.state = "revising";
+  log("lg-work", "↩ 반려·재작업 — " + task.title + (feedback ? " (" + feedback.slice(0, 20) + "…)" : ""));
+  renderApprovals(); updatePanel();
+  const emp = task.agent && employees.includes(task.agent) ? task.agent : employees.find(e => e.roleName === task.roleName);
+  if (!emp) { task.state = "failed"; log("lg-err", "⚠ 담당 직원이 없습니다"); return; }
+  const start = () => {
+    emp.task = task;
+    task.state = "working"; task.progress = 0;
+    emp.bubble = "다시 해보겠습니다!"; emp.bubbleT = 2.5;
+    walkTo(emp, emp.chair.x, emp.chair.y, () => { emp.state = "working"; emp.workT = 0; runWork(emp, task, feedback); });
+  };
+  if (emp.state === "idle" && !emp.task) start();
+  else emp.queue.unshift(Object.assign(task, { _feedback: feedback })), task.state = "queued";
+}
+
+/* sim timers */
+let simTimers = [];
+function setTimeoutSim(sec, fn) { simTimers.push({ t: sec, fn }); }
+function simDelay(sec) { return new Promise(r => setTimeoutSim(sec, r)); }
+function updateSimTimers(dt) {
+  for (const tm of simTimers) tm.t -= dt;
+  const fire = simTimers.filter(tm => tm.t <= 0);
+  simTimers = simTimers.filter(tm => tm.t > 0);
+  fire.forEach(tm => tm.fn());
+}
+
+/* ══════════════ MOVEMENT / IDLE ══════════════ */
+function walkTo(ag, tx, ty, onArrive) {
+  const sx = Math.max(0, Math.min(COLS - 1, Math.round((ag.px - 8) / TILE)));
+  const sy = Math.max(0, Math.min(ROWS - 1, Math.round((ag.py - 8) / TILE)));
+  const path = findPath(sx, sy, tx, ty);
+  if (path === null) { if (onArrive) onArrive(); return; }
+  ag.path = path;
+  ag.onArrive = onArrive || null;
+  if (path.length) { if (ag.state !== "delivering") ag.state = "walking"; }
+  else { if (ag.state === "walking") ag.state = "idle"; if (onArrive) { ag.onArrive = null; onArrive(); } }
+}
+
+const WORK_CHATTER = ["타닥타닥...", "음... 좋은데?", "거의 다 됐다!", "자료 확인 중...", "한 번만 더 다듬자"];
+const IDLE_CHATTER = ["☕ 커피 타임", "다음 지시 대기중", "모니터 정리 중...", "흠~♪"];
+
+function updateAgent(ag, dt) {
+  if (ag.bubbleT > 0) { ag.bubbleT -= dt; if (ag.bubbleT <= 0) ag.bubble = ""; }
+
+  if (ag.path.length) {
+    const [tx, ty] = ag.path[0];
+    const gx = tx * TILE + 8, gy = ty * TILE + 8;
+    const sp = 58 * dt;
+    const dx = gx - ag.px, dy = gy - ag.py;
+    const d = Math.hypot(dx, dy);
+    if (Math.abs(dx) > Math.abs(dy)) ag.dir = dx > 0 ? "right" : "left";
+    else if (Math.abs(dy) > 0.5) ag.dir = dy > 0 ? "down" : "up";
+    if (d <= sp) { ag.px = gx; ag.py = gy; ag.path.shift(); }
+    else { ag.px += dx / d * sp; ag.py += dy / d * sp; }
+    ag.walkFrame += dt * 9;
+    if (!ag.path.length) {
+      const cb = ag.onArrive; ag.onArrive = null;
+      if (ag.state === "walking") ag.state = "idle";
+      ag.dir = "down";
+      if (cb) cb();
+    }
+    return;
+  }
+
+  if (ag.state === "working" && ag.task) {
+    ag.dir = "up";
+    ag.workT += dt;
+    /* progress: unknown duration in AI mode → asymptotic */
+    ag.task.progress = Math.min(95, ag.task.progress + dt * (aiMode() ? 9 : 12));
+    if (Math.random() < dt * 0.22) { ag.bubble = WORK_CHATTER[Math.floor(Math.random() * WORK_CHATTER.length)]; ag.bubbleT = 1.8; }
+    return;
+  }
+
+  if (ag.state === "idle") {
+    ag.idleT -= dt;
+    if (ag.idleT <= 0) {
+      ag.idleT = 5 + Math.random() * 6;
+      if (ag === manager || ag === boss) {
+        if (Math.random() < 0.4) { ag.bubble = ag === boss ? "☕ 흠..." : "스케줄 점검 중"; ag.bubbleT = 2; }
+        return;
+      }
+      const r = Math.random();
+      if (r < 0.22) {
+        walkTo(ag, COFFEE_SPOT.x, COFFEE_SPOT.y, () => {
+          ag.bubble = "☕"; ag.bubbleT = 2;
+          setTimeoutSim(2.5, () => { if (ag.state === "idle" && !ag.task) walkTo(ag, ag.chair.x, ag.chair.y, () => tryStartNext(ag)); });
+        });
+      } else if (r < 0.45) {
+        ag.bubble = IDLE_CHATTER[Math.floor(Math.random() * IDLE_CHATTER.length)]; ag.bubbleT = 2;
+      } else if (r < 0.62) {
+        const wx = ag.chair.x + Math.floor(Math.random() * 7) - 3;
+        const wy = ag.chair.y + Math.floor(Math.random() * 4) + 1;
+        if (walkable(wx, wy)) walkTo(ag, wx, wy);
+      }
+    }
+  }
+}
+
+/* ══════════════ RENDERING ══════════════ */
+const cv = document.getElementById("game");
+const ctx = cv.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+let stampFx = 0;
+let particles = [];
+
+function spawnSparkles(x, y, color) {
+  for (let i = 0; i < 10; i++) {
+    particles.push({
+      x: x + Math.random() * 16 - 8, y: y + Math.random() * 12 - 6,
+      vx: (Math.random() - .5) * 26, vy: -14 - Math.random() * 22,
+      life: 0.7 + Math.random() * 0.5, color,
+    });
+  }
+}
+function updateParticles(dt) {
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 40 * dt; p.life -= dt; }
+  particles = particles.filter(p => p.life > 0);
+}
+
+function px(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+
+function drawTiles(t) {
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const ch = MAP[y][x], X = x * TILE, Y = y * TILE;
+      /* floor */
+      if (ch === ",") {
+        px(X, Y, TILE, TILE, (x + y) % 2 ? "#4e6a7a" : "#547181");
+        if (hash2(x, y) % 3 === 0) px(X + 5, Y + 5, 2, 2, "#5f7f91");
+        if (hash2(x, y) % 7 === 0) px(X + 11, Y + 10, 2, 2, "#48626f");
+      } else if (ch !== "#" && ch !== "E") {
+        const shade = hash2(x, y) % 4;
+        px(X, Y, TILE, TILE, y % 2 ? "#c49a6c" : "#bd9265");
+        if (shade === 0) px(X, Y, TILE, TILE, "rgba(0,0,0,.03)");
+        px(X, Y + TILE - 1, TILE, 1, "#a87f52");
+        if ((x * 7 + y * 13) % 5 === 0) px(X + 3, Y + 5, 3, 1, "#a87f52");
+      }
+      switch (ch) {
+        case "#": {
+          px(X, Y, TILE, TILE, "#23233a");
+          /* depth: lighter face where interior is below */
+          if (y + 1 < ROWS && MAP[y + 1][x] !== "#") px(X, Y + TILE - 5, TILE, 5, "#31314e");
+          px(X, Y, TILE, 2, "#3c3c5c");
+          /* windows on top wall */
+          if (y === 0 && x % 7 >= 2 && x % 7 <= 3 && x > 1 && x < COLS - 2) {
+            px(X + 2, Y + 4, 12, 9, "#101022");
+            px(X + 3, Y + 5, 10, 7, "#3a5f8a");
+            px(X + 3, Y + 5, 10, 2, "#557fae");
+            px(X + 7, Y + 5, 1, 7, "#101022");
+          }
+          break;
+        }
+        case "E":
+          px(X, Y, TILE, TILE, "#23233a");
+          px(X + 1, Y, 14, 12, "#6b4226");
+          px(X + 2, Y + 1, 12, 10, "#8a5a33");
+          px(X + 11, Y + 5, 2, 2, "#e0c060");
+          break;
+        case "d":
+          px(X + 1, Y + 14, 2, 2, "rgba(0,0,0,.25)");
+          px(X + 13, Y + 14, 2, 2, "rgba(0,0,0,.25)");
+          px(X, Y + 2, TILE, 12, "#8a5a33");
+          px(X, Y + 2, TILE, 2, "#a5713f");
+          px(X, Y + 13, TILE, 1, "#5f3c1e");
+          break;
+        case "b":
+          px(X, Y - 2, TILE, 16, "#6b4226");
+          px(X, Y - 2, TILE, 1, "#835531");
+          px(X + 1, Y, 4, 5, "#d65a5a"); px(X + 6, Y, 4, 5, "#3aa66a"); px(X + 11, Y, 4, 5, "#3d6bd6");
+          px(X + 1, Y + 7, 4, 5, "#d6a23a"); px(X + 6, Y + 7, 4, 5, "#8a5ad6"); px(X + 11, Y + 7, 4, 5, "#d65a5a");
+          break;
+        case "P":
+          px(X + 4, Y + 13, 8, 2, "rgba(0,0,0,.2)");
+          px(X + 5, Y + 9, 6, 5, "#a5713f");
+          px(X + 6, Y + 13, 4, 1, "#7d5429");
+          px(X + 4, Y + 2, 8, 7, "#2e8b57");
+          px(X + 6, Y, 4, 4, "#3aa66a");
+          px(X + 3, Y + 4, 2, 3, "#2e8b57");
+          px(X + 11, Y + 3, 2, 3, "#3aa66a");
+          break;
+        case "S":
+          px(X, Y + 3, TILE, 10, "#b04a4a");
+          px(X, Y + 1, TILE, 4, "#c95f5f");
+          px(X, Y + 12, TILE, 2, "#7e3333");
+          px(X + 2, Y + 6, 5, 4, "#c25555");
+          px(X + 9, Y + 6, 5, 4, "#c25555");
+          break;
+        case "t":
+          px(X + 1, Y + 5, 14, 7, "#8a5a33");
+          px(X + 1, Y + 5, 14, 2, "#a5713f");
+          px(X + 5, Y + 3, 5, 3, "#eeeeee");
+          break;
+        case "W": {
+          px(X + 3, Y + 1, 10, 13, "#777788");
+          px(X + 3, Y + 1, 10, 2, "#9090a2");
+          px(X + 5, Y + 4, 6, 4, "#333344");
+          px(X + 6, Y + 10, 4, 2, Math.sin(t * 4) > 0 ? "#ff5555" : "#802020");
+          /* steam */
+          const s = Math.floor(t * 3) % 3;
+          px(X + 6 + s, Y - 3 - s, 1, 1, "rgba(255,255,255,.5)");
+          px(X + 9 - s, Y - 5 + s, 1, 1, "rgba(255,255,255,.35)");
+          break;
+        }
+        case "I": {
+          px(X, Y + 3, TILE, 11, "#8a5a33");
+          px(X, Y + 3, TILE, 2, "#a5713f");
+          px(X + 2, Y + 1, 12, 4, "#eeeeee");
+          px(X + 3, Y + 2, 10, 1, "#aaaaaa");
+          break;
+        }
+      }
+    }
+  }
+
+  /* wall clock */
+  const cx = 24 * TILE, cy = 4;
+  px(cx, cy, 8, 8, "#e8e8f0"); px(cx, cy, 8, 1, "#999"); px(cx, cy + 7, 8, 1, "#999");
+  px(cx, cy, 1, 8, "#999"); px(cx + 7, cy, 1, 8, "#999");
+  const ang = t * 0.5;
+  px(cx + 3 + Math.round(Math.cos(ang) * 2), cy + 3 + Math.round(Math.sin(ang) * 2), 1, 1, "#d65a5a");
+  px(cx + 3, cy + 3, 1, 1, "#333");
+
+  /* zone labels */
+  ctx.font = "8px DungGeunMo, monospace";
+  ctx.fillStyle = "rgba(255,255,255,.35)";
+  ctx.fillText("사장실", 33 * TILE - 4, 1.7 * TILE);
+  ctx.fillText("접수함", 3 * TILE - 4, 15.6 * TILE);
+  ctx.fillText("휴게실", 33 * TILE, 15.7 * TILE - 2);
+  ctx.fillText("입구", 6 * TILE + 2, 21 * TILE - 4);
+
+  /* desk monitors: employees + manager */
+  const deskAgents = [...employees, manager];
+  for (const ag of deskAgents) {
+    if (!ag.desk) continue;
+    const X = ag.desk.x * TILE, Y = ag.desk.y * TILE;
+    px(X + 4, Y - 3, 10, 8, "#222233");
+    const on = ag.state === "working";
+    px(X + 5, Y - 2, 8, 6, on ? (Math.sin(t * 8) > 0 ? "#5fb3ff" : "#4a9be0") : "#111120");
+    if (on) px(X + 6, Y - 1 + Math.floor((t * 6) % 3), 5, 1, "#cfe9ff");
+    /* mug */
+    px(X + 17, Y + 4, 3, 3, "#d65a5a");
+    if (on && Math.floor(t * 2) % 2) px(X + 18, Y + 1, 1, 2, "rgba(255,255,255,.4)");
+  }
+
+  /* boss desk: monitor + pending approval papers */
+  px(BOSS_DESK.x * TILE + 8, BOSS_DESK.y * TILE - 3, 10, 8, "#222233");
+  px(BOSS_DESK.x * TILE + 9, BOSS_DESK.y * TILE - 2, 8, 6, "#1a1a2e");
+  const apprN = tasks.filter(tk => tk.state === "approval").length;
+  if (apprN) {
+    const blink = Math.sin(t * 6) > 0;
+    px(33 * TILE + 4, BOSS_DESK.y * TILE + 1, 10, 8, blink ? "#ffffff" : "#dddddd");
+    px(33 * TILE + 5, BOSS_DESK.y * TILE + 3, 8, 1, "#999");
+    px(33 * TILE + 5, BOSS_DESK.y * TILE + 5, 8, 1, "#999");
+    ctx.fillStyle = "#ff6b6b"; ctx.font = "8px DungGeunMo, monospace";
+    ctx.fillText("x" + apprN, 34 * TILE + 2, BOSS_DESK.y * TILE);
+  }
+  if (stampFx > 0) {
+    ctx.fillStyle = "rgba(255,80,80," + (stampFx / 0.7) + ")";
+    ctx.font = "10px DungGeunMo, monospace";
+    ctx.fillText("승인", 33 * TILE + 3, BOSS_DESK.y * TILE + 8);
+  }
+  const inboxN = tasks.filter(tk => tk.state === "inbox" || tk.state === "analyzing").length;
+  if (inboxN) {
+    ctx.fillStyle = Math.sin(t * 5) > 0 ? "#ffd23f" : "#c9a52f";
+    ctx.font = "8px DungGeunMo, monospace";
+    ctx.fillText("!", 4 * TILE + 6, 15 * TILE + 6);
+  }
+}
+
+/* hair styles: fn(x, y, color) — head top-left is (x+3, y) */
+const HAIR_STYLES = [
+  (x, y, c) => { px(x + 3, y, 6, 2, c); },                                            /* flat */
+  (x, y, c) => { px(x + 3, y, 6, 2, c); px(x + 3, y - 1, 1, 1, c); px(x + 5, y - 1, 1, 1, c); px(x + 7, y - 1, 1, 1, c); }, /* spiky */
+  (x, y, c) => { px(x + 3, y, 6, 2, c); px(x + 2, y + 1, 1, 6, c); px(x + 9, y + 1, 1, 6, c); }, /* long */
+  (x, y, c) => { px(x + 2, y, 8, 3, c); },                                            /* bob */
+  (x, y, c) => { px(x + 3, y, 6, 2, "#2f4a6e"); px(x + 2, y + 1, 8, 1, "#2f4a6e"); }, /* cap */
+];
+
+function drawChar(ag, t) {
+  const walking = ag.path.length > 0;
+  const bob = walking ? (Math.floor(ag.walkFrame) % 2) : 0;
+  const x = Math.round(ag.px) - 6, y = Math.round(ag.py) - 12 - bob;
+  const L = ag.look;
+  const pants = "#33334a";
+
+  px(x + 2, Math.round(ag.py) + 1, 8, 2, "rgba(0,0,0,.25)");
+
+  /* legs */
+  if (walking) {
+    const f = Math.floor(ag.walkFrame) % 2;
+    px(x + 3, y + 10, 2, f ? 3 : 2, pants);
+    px(x + 7, y + 10, 2, f ? 2 : 3, pants);
+  } else {
+    px(x + 3, y + 10, 2, 3, pants);
+    px(x + 7, y + 10, 2, 3, pants);
+  }
+  px(x + 3, y + 12, 2, 1, "#1c1c28");
+  px(x + 7, y + 12, 2, 1, "#1c1c28");
+
+  /* body */
+  px(x + 2, y + 5, 8, 5, L.shirt);
+  px(x + 2, y + 9, 8, 1, "rgba(0,0,0,.18)");
+
+  /* arms */
+  if (ag.state === "working") {
+    const k = Math.floor(t * 8) % 2;
+    px(x + 1, y + 6 + k, 1, 2, L.skin);
+    px(x + 10, y + 7 - k, 1, 2, L.skin);
+  } else if (ag.dir === "left") {
+    px(x + 1, y + 6, 1, 3, L.shirt); px(x + 1, y + 8, 1, 1, L.skin);
+  } else if (ag.dir === "right") {
+    px(x + 10, y + 6, 1, 3, L.shirt); px(x + 10, y + 8, 1, 1, L.skin);
+  } else {
+    px(x + 1, y + 6, 1, 3, L.shirt); px(x + 10, y + 6, 1, 3, L.shirt);
+    px(x + 1, y + 8, 1, 1, L.skin); px(x + 10, y + 8, 1, 1, L.skin);
+  }
+
+  /* head */
+  px(x + 3, y + 1, 6, 4, L.skin);
+  HAIR_STYLES[L.hair % HAIR_STYLES.length](x, y, L.hairColor);
+
+  /* face by direction */
+  if (ag.dir === "up" || ag.state === "working") {
+    px(x + 3, y + 1, 6, 3, L.hairColor); /* back of head */
+  } else if (ag.dir === "left") {
+    px(x + 3, y + 2, 1, 1, "#222"); px(x + 5, y + 2, 1, 1, "#222");
+  } else if (ag.dir === "right") {
+    px(x + 6, y + 2, 1, 1, "#222"); px(x + 8, y + 2, 1, 1, "#222");
+  } else {
+    px(x + 4, y + 2, 1, 1, "#222"); px(x + 7, y + 2, 1, 1, "#222");
+  }
+
+  /* boss tie */
+  if (ag === boss) px(x + 5, y + 5, 2, 4, "#d65a5a");
+
+  /* progress bar over the desk while working */
+  if (ag.state === "working" && ag.task && ag.desk) {
+    const bx = ag.desk.x * TILE - 4, by = ag.desk.y * TILE - 9;
+    px(bx, by, 24, 4, "#111");
+    px(bx + 1, by + 1, Math.round(22 * ag.task.progress / 100), 2, "#7cfc9b");
+  }
+}
+
+function drawBubble(ag) {
+  if (!ag.bubble) return;
+  ctx.font = "8px DungGeunMo, monospace";
+  const w = ctx.measureText(ag.bubble).width + 8;
+  let bx = Math.round(ag.px) - w / 2, by = Math.round(ag.py) - 27;
+  bx = Math.max(2, Math.min(cv.width - w - 2, bx));
+  if (by < 2) by = 2;
+  ctx.fillStyle = "#fff"; ctx.fillRect(bx, by, w, 12);
+  ctx.strokeStyle = "#222"; ctx.lineWidth = 1; ctx.strokeRect(bx + .5, by + .5, w - 1, 11);
+  px(Math.round(ag.px) - 1, by + 12, 2, 2, "#fff");
+  ctx.fillStyle = "#222";
+  ctx.fillText(ag.bubble, bx + 4, by + 9);
+}
+
+function render(t) {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  drawTiles(t);
+  const all = allAgents().sort((a, b) => a.py - b.py);
+  for (const ag of all) drawChar(ag, t);
+  for (const p of particles) px(Math.round(p.x), Math.round(p.y), 2, 2, p.color);
+  for (const ag of all) drawBubble(ag);
+  /* vignette */
+  const g = ctx.createRadialGradient(320, 176, 200, 320, 176, 420);
+  g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,.22)");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
+}
+
+/* ══════════════ UI ══════════════ */
+const logEl = document.getElementById("log");
+function log(cls, msg) {
+  const d = document.createElement("div");
+  const now = new Date();
+  const p2 = n => String(n).padStart(2, "0");
+  d.innerHTML = "<time>" + p2(now.getHours()) + ":" + p2(now.getMinutes()) + ":" + p2(now.getSeconds()) +
+    "</time><span class='" + cls + "'></span>";
+  d.lastChild.textContent = msg;
+  logEl.prepend(d);
+  while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild);
+}
+
+function chipSvg(look) {
+  return "data:image/svg+xml," + encodeURIComponent(
+    "<svg xmlns='http://www.w3.org/2000/svg' width='7' height='7'>" +
+    "<rect x='1.5' y='3.5' width='4' height='3.5' fill='" + look.shirt + "'/>" +
+    "<rect x='2' y='1' width='3' height='2.5' fill='" + look.skin + "'/>" +
+    "<rect x='2' y='0.5' width='3' height='1' fill='" + look.hairColor + "'/></svg>");
+}
+
+const rosterEl = document.getElementById("roster");
+function buildRoster() {
+  rosterEl.innerHTML = "";
+  for (const ag of [manager, ...employees, boss]) {
+    const row = document.createElement("div");
+    row.className = "agent-row";
+    const img = document.createElement("img");
+    img.className = "chip"; img.src = chipSvg(ag.look); img.alt = "";
+    const nm = document.createElement("span");
+    nm.className = "agent-name"; nm.textContent = ag.roleName;
+    const st = document.createElement("span");
+    st.className = "agent-status"; st.id = "st-" + ag.id;
+    row.append(img, nm, st);
+    if (employees.includes(ag)) {
+      const fire = document.createElement("button");
+      fire.className = "fire"; fire.textContent = "✖"; fire.title = "퇴사시키기";
+      fire.addEventListener("click", () => fireEmployee(ag));
+      row.appendChild(fire);
+    }
+    rosterEl.appendChild(row);
+  }
+}
+
+function updatePanel() {
+  document.getElementById("kStaff").textContent = employees.length;
+  document.getElementById("kWork").textContent = tasks.filter(t => ["inbox","analyzing","queued","working","revising"].includes(t.state)).length;
+  document.getElementById("kApproval").textContent = tasks.filter(t => t.state === "approval").length;
+  document.getElementById("kDone").textContent = doneCount;
+  for (const ag of [manager, ...employees, boss]) {
+    const el = document.getElementById("st-" + ag.id);
+    if (!el) continue;
+    let txt = "대기중", cls = "agent-status";
+    if (ag === boss) {
+      const n = tasks.filter(t => t.state === "approval").length;
+      txt = n ? "결재 대기 " + n + "건" : "대기중";
+      if (n) cls += " approval";
+    } else if (ag === manager) {
+      txt = managerBusy ? "지시 분석중" : "대기중";
+      if (managerBusy) cls += " busy";
+    } else if (ag.state === "working" && ag.task) {
+      txt = ag.task.title + " " + Math.round(ag.task.progress) + "%"; cls += " busy";
+    } else if (ag.state === "delivering") { txt = "결재 요청 중"; cls += " approval"; }
+    else if (ag.path.length) { txt = "이동중"; }
+    else if (ag.queue.length) { txt = "대기 업무 " + ag.queue.length + "건"; }
+    el.textContent = txt; el.className = cls;
+  }
+}
+
+/* ── approval inbox ── */
+const apprListEl = document.getElementById("apprList");
+let openTask = null;
+function renderApprovals() {
+  const list = tasks.filter(t => t.state === "approval");
+  document.getElementById("apprCount").textContent = list.length ? list.length + "건" : "";
+  apprListEl.innerHTML = "";
+  if (!list.length) { apprListEl.innerHTML = "<div class='appr-empty'>결재할 문서가 없습니다.</div>"; return; }
+  for (const task of list) {
+    const d = document.createElement("div");
+    d.className = "appr-item";
+    d.innerHTML = "<div class='t'>📄 </div><div class='r'></div>";
+    d.querySelector(".t").append(task.title);
+    d.querySelector(".r").textContent = "담당: " + task.roleName + " · 클릭해서 검토";
+    d.addEventListener("click", () => openDoc(task, false));
+    apprListEl.appendChild(d);
+  }
+}
+
+const archListEl = document.getElementById("archList");
+function renderArchive() {
+  document.getElementById("archCount").textContent = archive.length ? archive.length + "건" : "";
+  archListEl.innerHTML = "";
+  if (!archive.length) { archListEl.innerHTML = "<div class='appr-empty'>승인된 결과물이 여기 보관됩니다.</div>"; return; }
+  for (const item of archive.slice(0, 8)) {
+    const d = document.createElement("div");
+    d.className = "appr-item";
+    d.innerHTML = "<div class='t'>✅ </div><div class='r'></div>";
+    d.querySelector(".t").append(item.title);
+    d.querySelector(".r").textContent = "담당: " + item.roleName + " · " + new Date(item.ts).toLocaleDateString("ko-KR");
+    d.addEventListener("click", () => openDoc(item, true));
+    archListEl.appendChild(d);
+  }
+}
+
+function openDoc(doc, readonly) {
+  openTask = doc;
+  document.getElementById("apprTitle").textContent = (readonly ? "📁 " : "📄 ") + doc.title;
+  document.getElementById("apprSub").textContent = "담당: " + doc.roleName + " · 지시: " + doc.instruction;
+  document.getElementById("apprBody").textContent = doc.result || "(내용 없음)";
+  document.getElementById("btnApprove").style.display = readonly ? "none" : "";
+  document.getElementById("btnReject").style.display = readonly ? "none" : "";
+  document.getElementById("rejectBox").style.display = "none";
+  document.getElementById("rejectFeedback").value = "";
+  document.getElementById("apprModalBg").classList.add("open");
+}
+document.getElementById("btnApprove").addEventListener("click", () => {
+  if (openTask) approveTask(openTask);
+  document.getElementById("apprModalBg").classList.remove("open");
+});
+document.getElementById("btnReject").addEventListener("click", () => {
+  const box = document.getElementById("rejectBox");
+  if (box.style.display === "none") { box.style.display = "block"; document.getElementById("rejectFeedback").focus(); return; }
+  const fb = document.getElementById("rejectFeedback").value.trim() || "더 좋게 다듬어주세요";
+  if (openTask) rejectTask(openTask, fb);
+  document.getElementById("apprModalBg").classList.remove("open");
+});
+document.getElementById("btnCopy").addEventListener("click", () => {
+  if (openTask && openTask.result) navigator.clipboard.writeText(openTask.result).catch(() => {});
+});
+document.getElementById("btnDownload").addEventListener("click", () => {
+  if (!openTask || !openTask.result) return;
+  const blob = new Blob([openTask.result], { type: "text/markdown;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (openTask.title || "결과물").replace(/[\\/:*?"<>|]/g, "_") + ".md";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+document.getElementById("btnApprClose").addEventListener("click", () => document.getElementById("apprModalBg").classList.remove("open"));
+
+/* ── settings ── */
+function refreshModeBadge() {
+  const b = document.getElementById("modeBadge");
+  if (aiMode()) { b.textContent = "🤖 AI 연결됨 · " + settings.model; b.classList.add("ai"); }
+  else { b.textContent = "시뮬레이션 모드 · API 키를 등록하면 진짜 AI가 일합니다"; b.classList.remove("ai"); }
+}
+document.getElementById("btnSettings").addEventListener("click", () => {
+  document.getElementById("setKey").value = settings.key;
+  document.getElementById("setModel").value = settings.model;
+  document.getElementById("setStatus").textContent = "";
+  document.getElementById("setModalBg").classList.add("open");
+});
+document.getElementById("btnSetClose").addEventListener("click", () => document.getElementById("setModalBg").classList.remove("open"));
+document.getElementById("btnKeySave").addEventListener("click", () => {
+  settings.key = document.getElementById("setKey").value.trim();
+  settings.model = document.getElementById("setModel").value;
+  if (settings.key) localStorage.setItem(LS_KEY, settings.key); else localStorage.removeItem(LS_KEY);
+  localStorage.setItem(LS_MODEL, settings.model);
+  refreshModeBadge();
+  document.getElementById("setStatus").textContent = settings.key ? "저장되었습니다. 이제 직원들이 실제 Claude API로 일합니다." : "키가 비어 있어 시뮬레이션 모드로 동작합니다.";
+  log(settings.key ? "lg-hire" : "lg-work", settings.key ? "🤖 실제 AI 에이전트 연결됨 (" + settings.model + ")" : "시뮬레이션 모드로 전환");
+});
+document.getElementById("btnReset").addEventListener("click", () => {
+  if (!confirm("직원 명단과 완료 보관함을 모두 초기화할까요? (API 키는 유지됩니다)")) return;
+  localStorage.removeItem(LS_EMP);
+  localStorage.removeItem(LS_ARC);
+  location.reload();
+});
+document.getElementById("btnKeyDelete").addEventListener("click", () => {
+  settings.key = "";
+  localStorage.removeItem(LS_KEY);
+  document.getElementById("setKey").value = "";
+  refreshModeBadge();
+  document.getElementById("setStatus").textContent = "키를 삭제했습니다. 시뮬레이션 모드로 동작합니다.";
+});
+document.getElementById("btnKeyTest").addEventListener("click", async () => {
+  const st = document.getElementById("setStatus");
+  const k = document.getElementById("setKey").value.trim();
+  if (!k) { st.textContent = "키를 먼저 입력하세요."; return; }
+  st.textContent = "연결 확인 중...";
+  const prev = settings.key;
+  settings.key = k;
+  try {
+    await apiCall({ model: document.getElementById("setModel").value, max_tokens: 16, messages: [{ role: "user", content: "ping" }] });
+    st.textContent = "✅ 연결 성공! 저장을 눌러 활성화하세요.";
+  } catch (e) {
+    st.textContent = "❌ 실패: " + e.message;
+  } finally { settings.key = prev; }
+});
+
+/* ── command bar / controls ── */
+const cmdInput = document.getElementById("cmdInput");
+document.getElementById("btnCmd").addEventListener("click", () => { submitInstruction(cmdInput.value); cmdInput.value = ""; });
+cmdInput.addEventListener("keydown", e => {
+  if (e.isComposing || e.keyCode === 229) return;   /* 한글 IME 조합 중 Enter 중복 방지 */
+  if (e.key === "Enter") { submitInstruction(cmdInput.value); cmdInput.value = ""; }
+});
+document.getElementById("btnDemo").addEventListener("click", () =>
+  submitInstruction(DEMO_INSTRUCTIONS[Math.floor(Math.random() * DEMO_INSTRUCTIONS.length)]));
+
+let speed = 1, paused = false, autoDemo = true;
+const spdBtns = { 1: document.getElementById("spd1"), 2: document.getElementById("spd2") };
+for (const [s, btn] of Object.entries(spdBtns)) {
+  btn.addEventListener("click", () => {
+    speed = Number(s);
+    Object.values(spdBtns).forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+  });
+}
+const pauseBtn = document.getElementById("btnPause");
+pauseBtn.addEventListener("click", () => { paused = !paused; pauseBtn.textContent = paused ? "▶ 재개" : "⏸ 일시정지"; });
+const autoBtn = document.getElementById("btnAuto");
+autoBtn.addEventListener("click", () => {
+  autoDemo = !autoDemo;
+  autoBtn.textContent = "데모 자동의뢰: " + (autoDemo ? "ON" : "OFF");
+  autoBtn.classList.toggle("active", autoDemo);
+});
+
+/* ══════════════ MAIN LOOP ══════════════ */
+let last = performance.now();
+let elapsed = 0, panelT = 0, spawnT = 7;
+
+function frame(now) {
+  let dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (!paused) {
+    dt *= speed;
+    elapsed += dt;
+    /* auto demo tasks only in simulation mode (real API costs money) */
+    if (autoDemo && !aiMode()) {
+      spawnT -= dt;
+      if (spawnT <= 0) {
+        const pending = tasks.filter(t => !["done","failed"].includes(t.state)).length;
+        if (pending < 5) submitInstruction(DEMO_INSTRUCTIONS[Math.floor(Math.random() * DEMO_INSTRUCTIONS.length)]);
+        spawnT = 12 + Math.random() * 9;
+      }
+    }
+    updateSimTimers(dt);
+    for (const ag of allAgents()) updateAgent(ag, dt);
+    updateManagerLoop();
+    if (stampFx > 0) stampFx -= dt;
+    updateParticles(dt);
+    for (const emp of employees) tryStartNext(emp);
+  }
+  render(elapsed);
+  panelT += dt;
+  if (panelT > 0.3) { panelT = 0; updatePanel(); }
+  requestAnimationFrame(frame);
+}
+
+restoreEmployees();
+buildRoster();
+refreshModeBadge();
+renderApprovals();
+renderArchive();
+log("lg-assign", "🏢 TRINITY AI AGENCY 오픈 — 지시를 내리면 직원이 채용됩니다");
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
