@@ -35,7 +35,7 @@ function corsHeaders(req) {
   };
 }
 
-const BRIDGE_VERSION = "v3";
+const BRIDGE_VERSION = "v4";
 const IS_WIN = process.platform === "win32";
 
 /* Windows에서는 claude가 claude.cmd / claude.exe 로 설치되므로 후보를 순서대로 시도.
@@ -45,14 +45,21 @@ const BIN_CANDIDATES = [CLAUDE_BIN, "claude", "claude.cmd", "claude.exe"]
   .concat(IS_WIN ? ["__cmdexe__"] : []);
 let resolvedBin = null;
 
+/* 직원들이 인터넷 검색을 쓸 수 있게 헤드리스 모드에 웹 도구 권한 부여 */
+const CLAUDE_ARGS = ["-p", "--allowedTools", "WebSearch", "WebFetch"];
+
 function spawnSpec(bin) {
   if (bin === "__cmdexe__") {
-    return { cmd: process.env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", "claude -p"], opts: { windowsVerbatimArguments: true } };
+    return {
+      cmd: process.env.ComSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", "claude " + CLAUDE_ARGS.join(" ")],
+      opts: { windowsVerbatimArguments: true },
+    };
   }
   /* .cmd/.bat 은 Node 보안 정책상 셸 경유가 필수(EINVAL 방지).
      명령줄은 고정 문자열뿐이고 프롬프트는 stdin이라 안전합니다. */
   const needsShell = IS_WIN && /\.(cmd|bat)$/i.test(bin);
-  return { cmd: bin, args: ["-p"], opts: needsShell ? { shell: true } : {} };
+  return { cmd: bin, args: CLAUDE_ARGS.slice(), opts: needsShell ? { shell: true } : {} };
 }
 
 function trySpawn(bin, prompt) {

@@ -603,19 +603,38 @@ async function aiClassify(instruction) {
   return JSON.parse(textOf(data));
 }
 
+function searchTools() {
+  /* 최신 web_search는 haiku 미지원 → 모델별 버전 분기 */
+  const type = settings.model.indexOf("haiku") >= 0 ? "web_search_20250305" : "web_search_20260209";
+  return [{ type, name: "web_search", max_uses: 3 }];
+}
+
+const WORKER_GUIDE =
+  " 최신 정보나 사실 확인이 필요하면 웹 검색을 활용해 반영하세요." +
+  " 디자인·이미지 등 시각 결과물 요청은 SVG 코드 또는 구체적인 시안 기술서(레이아웃·색상·문구)로 제출하세요." +
+  " 인사말이나 '다음은 ~입니다' 같은 서두·맺음말 없이 결과물 본문만 출력하세요.";
+
 async function aiPerform(task) {
   const sys =
     "당신은 AI 에이전시 'TRINITY AI AGENCY'의 " + task.roleName + "입니다. " +
-    "사장의 지시를 수행해 완성된 결과물을 한국어로 작성하세요. " +
-    "인사말이나 '다음은 ~입니다' 같은 서두·맺음말 없이 결과물 본문만 출력하세요.";
+    "사장의 지시를 수행해 완성된 결과물을 한국어로 작성하세요." + WORKER_GUIDE;
   if (!task.history.length) task.history.push({ role: "user", content: task.instruction });
-  const data = await apiCall({
+  const msgs = task.history.slice();
+  const req = () => apiCall({
     model: settings.model,
     max_tokens: 8192,
     system: sys,
-    messages: task.history,
+    messages: msgs,
+    tools: searchTools(),
   });
-  const out = textOf(data);
+  let data = await req();
+  /* 서버측 웹검색이 길어지면 pause_turn으로 멈춤 → 이어서 재요청 */
+  let guard = 0;
+  while (data.stop_reason === "pause_turn" && guard++ < 3) {
+    msgs.push({ role: "assistant", content: data.content });
+    data = await req();
+  }
+  const out = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
   task.history.push({ role: "assistant", content: out });
   return out;
 }
@@ -654,8 +673,7 @@ async function bridgeClassify(instruction) {
 async function bridgePerform(task, feedback) {
   let prompt =
     "당신은 AI 에이전시 'TRINITY AI AGENCY'의 " + task.roleName + "입니다. " +
-    "아래 사장 지시를 수행해 완성된 결과물을 한국어로 작성하세요. " +
-    "인사말이나 '다음은 ~입니다' 같은 서두·맺음말 없이 결과물 본문만 출력하세요.\n\n" +
+    "아래 사장 지시를 수행해 완성된 결과물을 한국어로 작성하세요." + WORKER_GUIDE + "\n\n" +
     "지시: " + task.instruction;
   if (feedback && task.result) {
     prompt += "\n\n[이전 결과물]\n" + task.result +
@@ -711,13 +729,15 @@ function updateManagerLoop() {
   walkTo(manager, INBOX_SPOT.x, INBOX_SPOT.y, async () => {
     manager.bubble = "지시 분석 중..."; manager.bubbleT = 2.5;
     try {
-      let cls;
-      if (bridgeMode()) {
-        try { cls = await bridgeClassify(task.instruction); }
-        catch (e) { if (e.message === "PARSE_FAIL") cls = simClassify(task.instruction); else throw e; }
+      /* 1차: 키워드로 명확한 직무는 즉시 배정 (디자인→디자이너 등 오배정 방지) */
+      let cls = simClassify(task.instruction);
+      if (cls.role === "만능비서" && liveMode()) {
+        /* 2차: 애매한 지시만 AI가 직무 판단 (새 직무 창조 가능) */
+        try { cls = bridgeMode() ? await bridgeClassify(task.instruction) : await aiClassify(task.instruction); }
+        catch (e) { if (e.message !== "PARSE_FAIL") throw e; }
+      } else if (!liveMode()) {
+        await simDelay(1.4);
       }
-      else if (aiMode()) cls = await aiClassify(task.instruction);
-      else { await simDelay(1.6); cls = simClassify(task.instruction); }
       task.roleName = (cls.role || "만능비서").trim().slice(0, 8);
       task.title = (cls.title || task.title).trim().slice(0, 24);
       assignTask(task);
