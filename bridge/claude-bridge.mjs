@@ -14,6 +14,9 @@
  */
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT || 8787);
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
@@ -35,7 +38,83 @@ function corsHeaders(req) {
   };
 }
 
-const BRIDGE_VERSION = "v5";
+const BRIDGE_VERSION = "v6";
+
+/* ══════════ 정기 업무 스케줄러 ══════════
+   schedules.json: 사이트에서 등록한 반복 지시 목록
+   outbox.json:   완료된 결과물 발신함 (사이트가 수거해감)          */
+const DATA_DIR = dirname(fileURLToPath(import.meta.url));
+const SCHED_FILE = join(DATA_DIR, "schedules.json");
+const OUTBOX_FILE = join(DATA_DIR, "outbox.json");
+const loadJson = (f, d) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch (_) { return d; } };
+let schedules = loadJson(SCHED_FILE, []);
+let outbox = loadJson(OUTBOX_FILE, []);
+const saveSchedules = () => { try { writeFileSync(SCHED_FILE, JSON.stringify(schedules, null, 2)); } catch (_) {} };
+const saveOutbox = () => { try { writeFileSync(OUTBOX_FILE, JSON.stringify(outbox, null, 2)); } catch (_) {} };
+
+const WORKER_GUIDE =
+  " 최신 정보나 사실 확인이 필요하면 웹 검색을 활용해 반영하세요." +
+  " 디자인·이미지 등 시각 결과물 요청은 SVG 코드 또는 구체적인 시안 기술서(레이아웃·색상·문구)로 제출하세요." +
+  " 인사말이나 '다음은 ~입니다' 같은 서두·맺음말 없이 결과물 본문만 출력하세요.";
+
+function sanitizeSchedules(raw) {
+  if (!Array.isArray(raw)) return [];
+  const prev = new Map(schedules.map(s => [s.id, s]));
+  return raw.slice(0, 20).map(s => ({
+    id: String(s.id || Date.now() + "-" + Math.random().toString(36).slice(2, 7)),
+    instruction: String(s.instruction || "").slice(0, 500),
+    roleName: String(s.roleName || "만능비서").slice(0, 8),
+    freq: s.freq === "weekly" ? "weekly" : "daily",
+    day: Math.min(6, Math.max(0, Number(s.day) || 0)),
+    hour: Math.min(23, Math.max(0, Number(s.hour) || 0)),
+    minute: Math.min(59, Math.max(0, Number(s.minute) || 0)),
+    enabled: !!s.enabled,
+    lastSlot: (prev.get(String(s.id)) || {}).lastSlot || null,
+  })).filter(s => s.instruction);
+}
+
+/* 오늘 실행할 차례인지: 요일·시각이 지났고 아직 오늘 안 돌았으면 실행 (늦게 켜도 당일이면 따라잡음) */
+function dueSlot(s, now) {
+  const d = new Date(now);
+  if (s.freq === "weekly" && d.getDay() !== s.day) return null;
+  if (d.getHours() < s.hour || (d.getHours() === s.hour && d.getMinutes() < s.minute)) return null;
+  return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+}
+
+async function runScheduled(s) {
+  console.log("[정기 업무 실행]", s.instruction.slice(0, 40));
+  const prompt =
+    "당신은 AI 에이전시 'TRINITY AI AGENCY'의 " + s.roleName + "입니다. " +
+    "아래의 정기 지시를 수행해 완성된 결과물을 한국어로 작성하세요." + WORKER_GUIDE +
+    "\n\n지시: " + s.instruction;
+  await acquireSlot();
+  try {
+    const result = await runClaude(prompt);
+    outbox.push({
+      id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+      ts: Date.now(),
+      title: s.instruction.length > 18 ? s.instruction.slice(0, 18) + "…" : s.instruction,
+      roleName: s.roleName, instruction: s.instruction, result,
+    });
+    saveOutbox();
+    console.log("[정기 업무 완료 → 발신함 대기 " + outbox.length + "건]");
+  } catch (e) {
+    console.error("[정기 업무 실패]", e.message);
+  } finally { releaseSlot(); }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const s of schedules) {
+    if (!s.enabled) continue;
+    const slot = dueSlot(s, now);
+    if (slot && s.lastSlot !== slot) {
+      s.lastSlot = slot;
+      saveSchedules();
+      runScheduled(s);
+    }
+  }
+}, Number(process.env.SCHED_TICK_MS || 30000));
 
 /* PC 과부하 방지: Claude Code 동시 실행 제한 (초과분은 대기열에서 순서대로) */
 const MAX_CONCURRENT = Math.max(1, Number(process.env.MAX_CONCURRENT || 2));
@@ -140,6 +219,54 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  /* ── 정기 업무 스케줄 CRUD ── */
+  if (req.method === "GET" && req.url === "/schedules") {
+    res.writeHead(200, { ...cors, "content-type": "application/json" });
+    res.end(JSON.stringify({ schedules }));
+    return;
+  }
+  if (req.method === "POST" && req.url === "/schedules") {
+    let body = "";
+    req.on("data", d => { body += d; if (body.length > 200_000) req.destroy(); });
+    req.on("end", () => {
+      try {
+        schedules = sanitizeSchedules(JSON.parse(body || "{}").schedules);
+        saveSchedules();
+        console.log("[정기 업무 저장]", schedules.length + "건");
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, schedules }));
+      } catch (e) {
+        res.writeHead(400, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  /* ── 발신함: 완료된 정기 업무 결과 수거 ── */
+  if (req.method === "GET" && req.url === "/outbox") {
+    res.writeHead(200, { ...cors, "content-type": "application/json" });
+    res.end(JSON.stringify({ items: outbox }));
+    return;
+  }
+  if (req.method === "POST" && req.url === "/ack") {
+    let body = "";
+    req.on("data", d => { body += d; if (body.length > 200_000) req.destroy(); });
+    req.on("end", () => {
+      try {
+        const ids = new Set((JSON.parse(body || "{}").ids || []).map(String));
+        outbox = outbox.filter(i => !ids.has(String(i.id)));
+        saveOutbox();
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(400, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/run") {
     let body = "";
     req.on("data", d => { body += d; if (body.length > 200_000) req.destroy(); });
@@ -171,6 +298,7 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log("");
   console.log("  🏢 TRINITY AI AGENCY 브리지 " + BRIDGE_VERSION + " 가동 — http://127.0.0.1:" + PORT);
   console.log("  픽셀 오피스 ⚙ 설정에서 위 주소를 저장하면 Claude Code(구독)로 직원들이 일합니다.");
+  console.log("  정기 업무 " + schedules.length + "건 등록됨 · 발신함 대기 " + outbox.length + "건");
   console.log("  종료: Ctrl+C");
   console.log("");
 });

@@ -146,6 +146,25 @@
     .appr-item .r { color: var(--dim); font-size: 11px; margin-top: 3px; }
     .appr-empty { color: #55556f; font-size: 12px; }
 
+    /* schedule card */
+    #schedText {
+      width: 100%; font-family: inherit; font-size: 12px;
+      background: var(--panel2); color: var(--text);
+      border: 2px solid var(--line); padding: 8px; margin-bottom: 6px;
+    }
+    .sched-row { display: flex; gap: 6px; }
+    .sched-row select, .sched-row input {
+      flex: 1; min-width: 0; font-family: inherit; font-size: 12px;
+      background: var(--panel2); color: var(--text);
+      border: 2px solid var(--line); padding: 6px;
+    }
+    .sched-row button { flex: 0 0 auto; }
+    .sched-item { background: var(--panel2); border: 2px solid var(--line); padding: 8px; margin-bottom: 8px; font-size: 12px; }
+    .sched-item .t { color: var(--text); }
+    .sched-item .m { color: var(--dim); font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+    .sched-item .m button { font-size: 10px; padding: 2px 6px; }
+    .sched-item.off { opacity: .5; }
+
     #log { max-height: 200px; overflow-y: auto; font-size: 12px; line-height: 1.7; }
     #log div { border-bottom: 1px dashed #2c2c44; padding: 3px 0; }
     #log time { color: #6a6a8a; margin-right: 6px; font-size: 10px; }
@@ -245,6 +264,26 @@
       <div class="card">
         <h2>📋 사장 결재함 <span class="count" id="apprCount"></span></h2>
         <div id="apprList"><div class="appr-empty">결재할 문서가 없습니다.</div></div>
+      </div>
+
+      <div class="card">
+        <h2>⏰ 정기 업무</h2>
+        <div id="schedList"></div>
+        <input id="schedText" maxlength="500" placeholder="예: 이번 주 SNS 콘텐츠 기획안 작성해줘">
+        <div class="sched-row">
+          <select id="schedFreq">
+            <option value="daily">매일</option>
+            <option value="weekly" selected>매주</option>
+          </select>
+          <select id="schedDay">
+            <option value="1" selected>월</option><option value="2">화</option>
+            <option value="3">수</option><option value="4">목</option>
+            <option value="5">금</option><option value="6">토</option><option value="0">일</option>
+          </select>
+          <input type="time" id="schedTime" value="09:00">
+          <button class="primary" id="btnSchedAdd">추가</button>
+        </div>
+        <div class="note" id="schedNote"></div>
       </div>
 
       <div class="card">
@@ -1471,6 +1510,8 @@ document.getElementById("btnKeySave").addEventListener("click", () => {
   log(liveMode() ? "lg-hire" : "lg-work",
       bridgeMode() ? "🖥 로컬 Claude Code 브리지 연결됨" :
       aiMode() ? "🤖 실제 AI 에이전트 연결됨 (" + settings.model + ")" : "시뮬레이션 모드로 전환");
+  loadSchedules();
+  pollOutbox();
 });
 document.getElementById("btnReset").addEventListener("click", () => {
   if (!confirm("직원 명단과 완료 보관함을 모두 초기화할까요? (API 키는 유지됩니다)")) return;
@@ -1511,6 +1552,125 @@ document.getElementById("btnKeyTest").addEventListener("click", async () => {
     st.textContent = "❌ 실패: " + e.message;
   } finally { settings.key = prev; }
 });
+
+/* ── 정기 업무 (브리지 스케줄러 연동) ── */
+async function bridgeGet(path) {
+  const res = await fetch(settings.bridge + path);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+async function bridgePostJson(path, body) {
+  const res = await fetch(settings.bridge + path, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+let schedulesCache = [];
+const schedListEl = document.getElementById("schedList");
+const schedNoteEl = document.getElementById("schedNote");
+const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+
+function renderSchedules() {
+  schedListEl.innerHTML = "";
+  if (!bridgeMode()) {
+    schedNoteEl.textContent = "로컬 Claude Code 브리지(⚙) 연결 시 사용할 수 있습니다.";
+    return;
+  }
+  schedNoteEl.textContent = "지정 시각에 PC의 브리지가 켜져 있으면 자동 실행됩니다 (당일 늦게 켜도 따라잡습니다). 결과는 결재함으로 도착합니다.";
+  if (!schedulesCache.length) {
+    schedListEl.innerHTML = "<div class='appr-empty'>등록된 정기 업무가 없습니다.</div>";
+    return;
+  }
+  for (const s of schedulesCache) {
+    const d = document.createElement("div");
+    d.className = "sched-item" + (s.enabled ? "" : " off");
+    const t = document.createElement("div"); t.className = "t";
+    t.textContent = s.instruction.length > 30 ? s.instruction.slice(0, 30) + "…" : s.instruction;
+    const m = document.createElement("div"); m.className = "m";
+    const meta = document.createElement("span");
+    meta.textContent = (s.freq === "weekly" ? "매주 " + DAY_NAMES[s.day] : "매일") + " " +
+      String(s.hour).padStart(2, "0") + ":" + String(s.minute).padStart(2, "0") + " · " + s.roleName;
+    const tog = document.createElement("button");
+    tog.textContent = s.enabled ? "ON" : "OFF";
+    if (s.enabled) tog.classList.add("active");
+    tog.addEventListener("click", () => { s.enabled = !s.enabled; pushSchedules(); });
+    const del = document.createElement("button");
+    del.className = "fire"; del.textContent = "✖"; del.title = "삭제";
+    del.addEventListener("click", () => { schedulesCache = schedulesCache.filter(x => x !== s); pushSchedules(); });
+    m.append(meta, tog, del);
+    d.append(t, m);
+    schedListEl.appendChild(d);
+  }
+}
+
+async function loadSchedules() {
+  if (bridgeMode()) {
+    try { schedulesCache = (await bridgeGet("/schedules")).schedules || []; } catch (_) {}
+  }
+  renderSchedules();
+}
+async function pushSchedules() {
+  renderSchedules();
+  if (!bridgeMode()) return;
+  try {
+    schedulesCache = (await bridgePostJson("/schedules", { schedules: schedulesCache })).schedules || schedulesCache;
+    renderSchedules();
+  } catch (e) {
+    log("lg-err", "⚠ 정기 업무 저장 실패 — 브리지가 켜져 있는지 확인하세요");
+  }
+}
+
+document.getElementById("schedFreq").addEventListener("change", e => {
+  document.getElementById("schedDay").style.display = e.target.value === "weekly" ? "" : "none";
+});
+document.getElementById("btnSchedAdd").addEventListener("click", () => {
+  const text = document.getElementById("schedText").value.trim();
+  if (!text) return;
+  if (!bridgeMode()) { log("lg-err", "⚠ 정기 업무는 로컬 브리지 연결 시 사용할 수 있습니다 (⚙ 설정)"); return; }
+  const [h, mi] = (document.getElementById("schedTime").value || "09:00").split(":").map(Number);
+  schedulesCache.push({
+    id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+    instruction: text,
+    roleName: simClassify(text).role,
+    freq: document.getElementById("schedFreq").value,
+    day: Number(document.getElementById("schedDay").value),
+    hour: h || 0, minute: mi || 0,
+    enabled: true,
+  });
+  document.getElementById("schedText").value = "";
+  log("lg-assign", "⏰ 정기 업무 등록 — " + text.slice(0, 20));
+  pushSchedules();
+});
+
+/* 발신함 수거: 브리지가 실행해 둔 정기 업무 결과 → 결재함 */
+let pollingOutbox = false;
+async function pollOutbox() {
+  if (!bridgeMode() || pollingOutbox) return;
+  pollingOutbox = true;
+  try {
+    const items = (await bridgeGet("/outbox")).items || [];
+    if (items.length) {
+      for (const it of items) {
+        tasks.push({
+          id: ++taskSeq, instruction: it.instruction || "",
+          title: "⏰ " + (it.title || "정기 업무"),
+          roleName: it.roleName || "만능비서", state: "approval", progress: 100,
+          result: it.result || "",
+          history: [{ role: "user", content: it.instruction || "" }, { role: "assistant", content: it.result || "" }],
+          agent: null,
+        });
+        log("lg-in", "⏰ 정기 업무 결과 도착 — " + (it.title || ""));
+      }
+      beepApproval();
+      renderApprovals(); updatePanel();
+      await bridgePostJson("/ack", { ids: items.map(i => i.id) });
+    }
+  } catch (_) {} finally { pollingOutbox = false; }
+}
+setInterval(pollOutbox, 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pollOutbox(); });
 
 /* ── command bar / controls ── */
 const cmdInput = document.getElementById("cmdInput");
@@ -1593,6 +1753,8 @@ buildRoster();
 refreshModeBadge();
 renderApprovals();
 renderArchive();
+loadSchedules();
+pollOutbox();
 log("lg-assign", "🏢 TRINITY AI AGENCY 오픈 — 지시를 내리면 직원이 채용됩니다");
 requestAnimationFrame(frame);
 </script>
