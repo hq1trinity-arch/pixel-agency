@@ -35,7 +35,23 @@ function corsHeaders(req) {
   };
 }
 
-const BRIDGE_VERSION = "v4";
+const BRIDGE_VERSION = "v5";
+
+/* PC 과부하 방지: Claude Code 동시 실행 제한 (초과분은 대기열에서 순서대로) */
+const MAX_CONCURRENT = Math.max(1, Number(process.env.MAX_CONCURRENT || 2));
+let runningJobs = 0;
+const jobQueue = [];
+function acquireSlot() {
+  return new Promise(resolve => {
+    if (runningJobs < MAX_CONCURRENT) { runningJobs++; resolve(); }
+    else { jobQueue.push(resolve); console.log("  [대기열] 앞선 작업 " + runningJobs + "건 진행 중 — 순서 대기"); }
+  });
+}
+function releaseSlot() {
+  const next = jobQueue.shift();
+  if (next) next();
+  else runningJobs--;
+}
 const IS_WIN = process.platform === "win32";
 
 /* Windows에서는 claude가 claude.cmd / claude.exe 로 설치되므로 후보를 순서대로 시도.
@@ -132,7 +148,10 @@ const server = createServer(async (req, res) => {
         const { prompt } = JSON.parse(body || "{}");
         if (!prompt || typeof prompt !== "string") throw new Error("prompt가 비어 있습니다");
         console.log("[작업 수신]", prompt.slice(0, 60).replace(/\n/g, " ") + "...");
-        const result = await runClaude(prompt);
+        await acquireSlot();
+        let result;
+        try { result = await runClaude(prompt); }
+        finally { releaseSlot(); }
         console.log("[완료]", result.length + "자");
         res.writeHead(200, { ...cors, "content-type": "application/json" });
         res.end(JSON.stringify({ result }));

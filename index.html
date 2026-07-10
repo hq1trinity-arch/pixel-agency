@@ -176,6 +176,9 @@
       max-height: 46vh; overflow-y: auto; color: var(--text); margin: 0 0 12px;
     }
     .modal .btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    .md-h { color: var(--accent); font-size: 14px; }
+    .md-code { display: block; background: #0d0d16; border: 1px solid var(--line); padding: 8px; margin: 6px 0; overflow-x: auto; }
+    code.md-ic { background: #0d0d16; border: 1px solid var(--line); padding: 0 4px; }
     .modal textarea, .modal input[type="password"], .modal input[type="text"], .modal select {
       width: 100%; font-family: inherit; font-size: 13px;
       background: var(--panel2); color: var(--text);
@@ -443,6 +446,32 @@ function saveEmployees() {
   try {
     localStorage.setItem(LS_EMP, JSON.stringify(employees.map(e => ({ roleName: e.roleName, look: e.look }))));
   } catch (_) {}
+}
+
+/* 결재 대기 문서 영속화 — 새로고침해도 AI 결과물이 사라지지 않게 */
+const LS_PEND = "trinity_agency_pending";
+function savePending() {
+  try {
+    localStorage.setItem(LS_PEND, JSON.stringify(
+      tasks.filter(t => t.state === "approval").map(t => ({
+        title: t.title, roleName: t.roleName, instruction: t.instruction,
+        result: t.result, history: t.history,
+      }))
+    ));
+  } catch (_) {}
+}
+function restorePending() {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(LS_PEND) || "[]"); } catch (_) {}
+  for (const it of list) {
+    if (!it || !it.result) continue;
+    tasks.push({
+      id: ++taskSeq, instruction: it.instruction || "", title: it.title || "복원된 문서",
+      roleName: it.roleName || "만능비서", state: "approval", progress: 100,
+      result: it.result, history: Array.isArray(it.history) ? it.history : [], agent: null,
+    });
+  }
+  if (list.length) log("lg-work", "📋 결재 대기 문서 " + list.length + "건 복원");
 }
 
 /* ══════════════ CHARACTERS ══════════════ */
@@ -745,6 +774,7 @@ function updateManagerLoop() {
       task.state = "failed";
       log("lg-err", "⚠ 분석 실패 — " + err.message);
       manager.bubble = "앗, 문제가..."; manager.bubbleT = 2;
+      renderApprovals();
     }
     walkTo(manager, manager.chair.x, manager.chair.y, () => { managerBusy = false; });
   });
@@ -807,14 +837,31 @@ async function runWork(emp, task, feedback) {
     emp.task = null; emp.state = "idle";
     log("lg-err", "⚠ " + emp.roleName + " 작업 실패 — " + err.message);
     emp.bubble = "죄송합니다..."; emp.bubbleT = 2.5;
+    renderApprovals();
     tryStartNext(emp);
     updatePanel();
   }
 }
 
+/* 8비트풍 결재 도착 알림음 (첫 사용자 상호작용 이후부터 재생 가능) */
+function beepApproval() {
+  try {
+    const A = beepApproval.ctx || (beepApproval.ctx = new (window.AudioContext || window.webkitAudioContext)());
+    [[660, 0], [990, 0.12]].forEach(([f, d]) => {
+      const o = A.createOscillator(), g = A.createGain();
+      o.type = "square"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.04, A.currentTime + d);
+      g.gain.exponentialRampToValueAtTime(0.001, A.currentTime + d + 0.15);
+      o.connect(g).connect(A.destination);
+      o.start(A.currentTime + d); o.stop(A.currentTime + d + 0.16);
+    });
+  } catch (_) {}
+}
+
 function finishWork(emp, task) {
   emp.state = "delivering";
   log("lg-work", "📝 " + emp.roleName + " 작업 완료 — " + task.title);
+  beepApproval();
   walkTo(emp, APPROVAL_SPOT.x, APPROVAL_SPOT.y, () => {
     emp.bubble = "결재 부탁드립니다!"; emp.bubbleT = 2.2;
     task.state = "approval";
@@ -846,8 +893,9 @@ function rejectTask(task, feedback) {
   task.state = "revising";
   log("lg-work", "↩ 반려·재작업 — " + task.title + (feedback ? " (" + feedback.slice(0, 20) + "…)" : ""));
   renderApprovals(); updatePanel();
-  const emp = task.agent && employees.includes(task.agent) ? task.agent : employees.find(e => e.roleName === task.roleName);
-  if (!emp) { task.state = "failed"; log("lg-err", "⚠ 담당 직원이 없습니다"); return; }
+  let emp = task.agent && employees.includes(task.agent) ? task.agent : employees.find(e => e.roleName === task.roleName);
+  if (!emp) emp = hireEmployee(task.roleName);   /* 담당자가 퇴사했으면 재채용 */
+  if (!emp) { task.state = "failed"; renderApprovals(); log("lg-err", "⚠ 담당 직원이 없습니다"); return; }
   const start = () => {
     emp.task = task;
     task.state = "working"; task.progress = 0;
@@ -1285,11 +1333,28 @@ function updatePanel() {
 /* ── approval inbox ── */
 const apprListEl = document.getElementById("apprList");
 let openTask = null;
+const baseTitle = document.title;
+function updateTitleBadge() {
+  const n = tasks.filter(t => t.state === "approval").length;
+  document.title = n ? "(" + n + " 결재) " + baseTitle : baseTitle;
+}
+
+function retryTask(task) {
+  if (task.state !== "failed") return;
+  log("lg-assign", "🔁 재시도 — " + task.title);
+  if (!task.roleName) { task.state = "inbox"; renderApprovals(); return; }
+  assignTask(task);
+  renderApprovals();
+}
+
 function renderApprovals() {
+  savePending();
+  updateTitleBadge();
   const list = tasks.filter(t => t.state === "approval");
+  const failed = tasks.filter(t => t.state === "failed");
   document.getElementById("apprCount").textContent = list.length ? list.length + "건" : "";
   apprListEl.innerHTML = "";
-  if (!list.length) { apprListEl.innerHTML = "<div class='appr-empty'>결재할 문서가 없습니다.</div>"; return; }
+  if (!list.length && !failed.length) { apprListEl.innerHTML = "<div class='appr-empty'>결재할 문서가 없습니다.</div>"; return; }
   for (const task of list) {
     const d = document.createElement("div");
     d.className = "appr-item";
@@ -1297,6 +1362,15 @@ function renderApprovals() {
     d.querySelector(".t").append(task.title);
     d.querySelector(".r").textContent = "담당: " + task.roleName + " · 클릭해서 검토";
     d.addEventListener("click", () => openDoc(task, false));
+    apprListEl.appendChild(d);
+  }
+  for (const task of failed) {
+    const d = document.createElement("div");
+    d.className = "appr-item";
+    d.innerHTML = "<div class='t' style='color:var(--red)'>⚠ </div><div class='r'></div>";
+    d.querySelector(".t").append(task.title);
+    d.querySelector(".r").textContent = "작업 실패 — 클릭해서 다시 시도";
+    d.addEventListener("click", () => retryTask(task));
     apprListEl.appendChild(d);
   }
 }
@@ -1317,11 +1391,24 @@ function renderArchive() {
   }
 }
 
+/* 초소형 마크다운 렌더러 — 이스케이프 후 자체 태그만 삽입하므로 안전 */
+function mdToHtml(src) {
+  let s = String(src)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  s = s.replace(/```[a-zA-Z]*\n?([\s\S]*?)```/g, (m, c) => "<span class='md-code'>" + c.replace(/\n$/, "") + "</span>");
+  s = s.replace(/^#{1,4}\s*(.+)$/gm, "<span class='md-h'>$1</span>");
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+  s = s.replace(/`([^`\n]+)`/g, "<code class='md-ic'>$1</code>");
+  s = s.replace(/^[-*]\s+/gm, "• ");
+  s = s.replace(/^---+$/gm, "──────────");
+  return s;
+}
+
 function openDoc(doc, readonly) {
   openTask = doc;
   document.getElementById("apprTitle").textContent = (readonly ? "📁 " : "📄 ") + doc.title;
   document.getElementById("apprSub").textContent = "담당: " + doc.roleName + " · 지시: " + doc.instruction;
-  document.getElementById("apprBody").textContent = doc.result || "(내용 없음)";
+  document.getElementById("apprBody").innerHTML = mdToHtml(doc.result || "(내용 없음)");
   document.getElementById("btnApprove").style.display = readonly ? "none" : "";
   document.getElementById("btnReject").style.display = readonly ? "none" : "";
   document.getElementById("rejectBox").style.display = "none";
@@ -1485,7 +1572,23 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+/* 백그라운드 탭에서는 requestAnimationFrame이 멈춤 →
+   1초 간격 보조 틱으로 배분·작업·타이머를 계속 진행 (렌더링은 생략) */
+setInterval(() => {
+  if (!document.hidden || paused) return;
+  const dt = 1 * speed;
+  elapsed += dt;
+  updateSimTimers(dt);
+  for (const ag of allAgents()) updateAgent(ag, dt);
+  updateManagerLoop();
+  if (stampFx > 0) stampFx -= dt;
+  updateParticles(dt);
+  for (const emp of employees) tryStartNext(emp);
+  updatePanel();
+}, 1000);
+
 restoreEmployees();
+restorePending();
 buildRoster();
 refreshModeBadge();
 renderApprovals();
