@@ -54,7 +54,10 @@ const saveOutbox = () => { try { writeFileSync(OUTBOX_FILE, JSON.stringify(outbo
 
 const WORKER_GUIDE =
   " 최신 정보나 사실 확인이 필요하면 웹 검색을 활용해 반영하세요." +
-  " 디자인·이미지 등 시각 결과물 요청은 SVG 코드 또는 구체적인 시안 기술서(레이아웃·색상·문구)로 제출하세요." +
+  " 카드뉴스·배너·썸네일 등 이미지 결과물 요청은 각 장을 완결된 SVG 코드로 제출하세요:" +
+  " 장마다 별도의 ```svg 코드블록, <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1080 1080\">로 시작," +
+  " 모든 문구는 <text>/<tspan> 요소로 넣고(줄바꿈은 tspan), 폰트는 system-ui·sans-serif 계열만," +
+  " 외부 이미지·외부 폰트·스크립트 참조는 금지. 배경·도형·색상 대비를 적극 활용해 완성도 있게." +
   " 인사말이나 '다음은 ~입니다' 같은 서두·맺음말 없이 결과물 본문만 출력하세요.";
 
 function sanitizeSchedules(raw) {

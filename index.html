@@ -196,6 +196,11 @@
     }
     .modal .btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
     .md-h { color: var(--accent); font-size: 14px; }
+    #svgPreview { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    #svgPreview img {
+      width: 150px; height: 150px; object-fit: contain;
+      background: #fff; border: 2px solid var(--line);
+    }
     .md-code { display: block; background: #0d0d16; border: 1px solid var(--line); padding: 8px; margin: 6px 0; overflow-x: auto; }
     code.md-ic { background: #0d0d16; border: 1px solid var(--line); padding: 0 4px; }
     .modal textarea, .modal input[type="password"], .modal input[type="text"], .modal select {
@@ -336,12 +341,14 @@
   <div class="modal">
     <h3 id="apprTitle">결재 문서</h3>
     <div class="sub" id="apprSub"></div>
+    <div id="svgPreview" style="display:none"></div>
     <pre id="apprBody"></pre>
     <div id="rejectBox" style="display:none">
       <label>반려 사유 / 수정 지시 (직원이 이 피드백으로 다시 작업합니다)</label>
       <textarea id="rejectFeedback" placeholder="예: 문장을 더 짧게, 제목을 더 자극적으로"></textarea>
     </div>
     <div class="btns">
+      <button class="good" id="btnPngDl" style="display:none">🖼 PNG 다운로드</button>
       <button id="btnCopy">복사</button>
       <button id="btnDownload">.md 다운로드</button>
       <button class="bad" id="btnReject">반려·재작업</button>
@@ -679,7 +686,10 @@ function searchTools() {
 
 const WORKER_GUIDE =
   " 최신 정보나 사실 확인이 필요하면 웹 검색을 활용해 반영하세요." +
-  " 디자인·이미지 등 시각 결과물 요청은 SVG 코드 또는 구체적인 시안 기술서(레이아웃·색상·문구)로 제출하세요." +
+  " 카드뉴스·배너·썸네일 등 이미지 결과물 요청은 각 장을 완결된 SVG 코드로 제출하세요:" +
+  " 장마다 별도의 ```svg 코드블록, <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1080 1080\">로 시작," +
+  " 모든 문구는 <text>/<tspan> 요소로 넣고(줄바꿈은 tspan), 폰트는 system-ui·sans-serif 계열만," +
+  " 외부 이미지·외부 폰트·스크립트 참조는 금지. 배경·도형·색상 대비를 적극 활용해 완성도 있게." +
   " 인사말이나 '다음은 ~입니다' 같은 서두·맺음말 없이 결과물 본문만 출력하세요.";
 
 async function aiPerform(task) {
@@ -1443,11 +1453,66 @@ function mdToHtml(src) {
   return s;
 }
 
+/* 결과물 속 SVG 디자인 추출 → 미리보기·PNG 변환 */
+let openSvgs = [];
+function extractSvgs(text) {
+  return (String(text).match(/<svg[\s\S]*?<\/svg>/gi) || []).slice(0, 12);
+}
+function svgToPng(svg, name) {
+  return new Promise(resolve => {
+    const m = svg.match(/viewBox=["']\s*[\d.-]+[ ,]+[\d.-]+[ ,]+([\d.]+)[ ,]+([\d.]+)/);
+    const w = m ? +m[1] : 1080, h = m ? +m[2] : 1080;
+    const img = new Image();
+    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = 1080; c.height = Math.max(1, Math.round(1080 * h / w));
+      const g = c.getContext("2d");
+      g.fillStyle = "#ffffff"; g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(b => {
+        if (b) {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(b);
+          a.download = name;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+        }
+        resolve();
+      }, "image/png");
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+    img.src = url;
+  });
+}
+document.getElementById("btnPngDl").addEventListener("click", async () => {
+  const base = ((openTask && openTask.title) || "디자인")
+    .replace(/[⏰📄📁]/g, "").trim().replace(/[\\/:*?"<>|…]/g, "_") || "디자인";
+  for (let i = 0; i < openSvgs.length; i++) {
+    await svgToPng(openSvgs[i], base + "-" + (i + 1) + ".png");
+    await new Promise(r => setTimeout(r, 350));   /* 브라우저 연속 다운로드 간격 */
+  }
+});
+
 function openDoc(doc, readonly) {
   openTask = doc;
   document.getElementById("apprTitle").textContent = (readonly ? "📁 " : "📄 ") + doc.title;
   document.getElementById("apprSub").textContent = "담당: " + doc.roleName + " · 지시: " + doc.instruction;
   document.getElementById("apprBody").innerHTML = mdToHtml(doc.result || "(내용 없음)");
+  /* SVG 디자인 미리보기 (img 로딩이라 스크립트 실행 없음 → 안전) */
+  openSvgs = extractSvgs(doc.result || "");
+  const prev = document.getElementById("svgPreview");
+  prev.innerHTML = "";
+  for (const s of openSvgs) {
+    const img = document.createElement("img");
+    img.alt = "디자인 미리보기";
+    img.src = URL.createObjectURL(new Blob([s], { type: "image/svg+xml" }));
+    prev.appendChild(img);
+  }
+  prev.style.display = openSvgs.length ? "" : "none";
+  document.getElementById("btnPngDl").style.display = openSvgs.length ? "" : "none";
+  document.getElementById("btnPngDl").textContent = "🖼 PNG 다운로드" + (openSvgs.length > 1 ? " (" + openSvgs.length + "장)" : "");
   document.getElementById("btnApprove").style.display = readonly ? "none" : "";
   document.getElementById("btnReject").style.display = readonly ? "none" : "";
   document.getElementById("rejectBox").style.display = "none";
