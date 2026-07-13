@@ -38,7 +38,14 @@ function corsHeaders(req) {
   };
 }
 
-const BRIDGE_VERSION = "v6";
+const BRIDGE_VERSION = "v7";
+
+/* 사용량 한도 초과 감지: Claude Code의 한도 에러를 분류해 사이트에 알려줌 */
+let limitInfo = null;   /* { at, message } — 마지막 한도 초과 정보 */
+function classifyError(msg) {
+  return /usage limit|rate limit|limit reached|limit will reset|out of (usage|quota)|exceeded.*limit|credit balance|overloaded/i
+    .test(String(msg)) ? "limit" : "error";
+}
 
 /* ══════════ 정기 업무 스케줄러 ══════════
    schedules.json: 사이트에서 등록한 반복 지시 목록
@@ -218,7 +225,7 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/ping") {
     res.writeHead(200, { ...cors, "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: true, engine: "claude-code", version: BRIDGE_VERSION }));
+    res.end(JSON.stringify({ ok: true, engine: "claude-code", version: BRIDGE_VERSION, limit: limitInfo }));
     return;
   }
 
@@ -282,13 +289,20 @@ const server = createServer(async (req, res) => {
         let result;
         try { result = await runClaude(prompt); }
         finally { releaseSlot(); }
+        limitInfo = null;   /* 성공 → 한도 상태 해제 */
         console.log("[완료]", result.length + "자");
         res.writeHead(200, { ...cors, "content-type": "application/json" });
         res.end(JSON.stringify({ result }));
       } catch (e) {
-        console.error("[오류]", e.message);
+        const kind = classifyError(e.message);
+        if (kind === "limit") {
+          limitInfo = { at: Date.now(), message: e.message.slice(0, 300) };
+          console.error("[⛔ 사용량 한도]", e.message.slice(0, 120));
+        } else {
+          console.error("[오류]", e.message);
+        }
         res.writeHead(500, { ...cors, "content-type": "application/json" });
-        res.end(JSON.stringify({ error: e.message }));
+        res.end(JSON.stringify({ error: e.message, kind }));
       }
     });
     return;

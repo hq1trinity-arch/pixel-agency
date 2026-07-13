@@ -87,6 +87,27 @@
     button.bad:hover { border-color: var(--red); color: var(--red); }
     button.active { border-color: var(--green); color: var(--green); }
 
+    /* file chips */
+    #fileChips { display: flex; flex-wrap: wrap; gap: 6px; }
+    #fileChips:not(:empty) { margin-top: 8px; }
+    .file-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--panel2); border: 1px solid var(--line);
+      padding: 4px 8px; font-size: 11px; color: var(--dim);
+    }
+    .file-chip b { color: var(--text); font-weight: normal; }
+    .file-chip button { border: none; background: none; color: var(--red); padding: 0 2px; font-size: 12px; }
+
+    /* usage limit banner */
+    .limit-banner {
+      display: none; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+      margin-top: 10px; padding: 12px;
+      background: #2b161a; border: 3px solid var(--red); color: var(--text); font-size: 13px;
+    }
+    .limit-banner.show { display: flex; }
+    .lb-detail { color: var(--dim); font-size: 11px; margin-top: 6px; word-break: break-all; }
+    .lb-btns { display: flex; gap: 8px; flex: 0 0 auto; }
+
     /* ── Layout ── */
     .game-area { display: flex; gap: 14px; margin-top: 14px; align-items: stretch; }
     @media (max-width: 940px) { .game-area { flex-direction: column; } }
@@ -239,8 +260,22 @@
   <div class="command-bar">
     <input id="cmdInput" type="text" maxlength="500"
            placeholder="사장님, 지시를 내려주세요… (예: 신제품 홍보 블로그 글 써줘 / 인스타 캡션 5개 만들어줘)">
+    <button id="btnAttach" title="참고 파일 첨부 (txt·md·csv·json·html)">📎</button>
+    <input type="file" id="fileInput" multiple accept=".txt,.md,.csv,.tsv,.json,.html,.htm,.log,.xml" style="display:none">
     <button class="primary" id="btnCmd">지시하기</button>
     <button id="btnSettings">⚙ API 연결</button>
+  </div>
+  <div id="fileChips"></div>
+
+  <div class="limit-banner" id="limitBanner">
+    <div>
+      <b>⛔ Claude 사용량 한도 도달</b> — 작업이 일시 중단됐습니다. 한도는 일정 시간(구독은 보통 5시간 주기) 후 자동으로 리셋됩니다.
+      <div class="lb-detail" id="limitDetail"></div>
+    </div>
+    <div class="lb-btns">
+      <button id="btnRetryAll">실패 작업 모두 재시도</button>
+      <button id="btnLimitClose">닫기</button>
+    </div>
   </div>
 
   <div class="game-area">
@@ -638,6 +673,14 @@ async function apiCall(body) {
     let msg = "HTTP " + res.status;
     try { const e = await res.json(); if (e.error && e.error.message) msg = e.error.message; } catch (_) {}
     if (res.status === 401) msg = "API 키가 유효하지 않습니다 (401)";
+    else if (res.status === 429) {
+      const ra = res.headers.get("retry-after");
+      showLimitBanner("API 호출 한도(429)에 걸렸습니다." + (ra ? " 약 " + ra + "초 후 재시도 가능." : " 잠시 후 자동 리셋됩니다."), "api");
+      msg = "API 사용량 한도(429) — 잠시 후 재시도하세요";
+    } else if (/credit balance/i.test(msg)) {
+      showLimitBanner("API 크레딧이 부족합니다 — console.anthropic.com 에서 충전하세요.", "api");
+      msg = "API 크레딧 부족";
+    }
     throw new Error(msg);
   }
   const data = await res.json();
@@ -749,7 +792,13 @@ async function bridgeCall(prompt) {
     throw new Error("브리지에 연결할 수 없습니다 — PC에서 node bridge/claude-bridge.mjs 가 켜져 있나요?");
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "브리지 오류 (" + res.status + ")");
+  if (!res.ok) {
+    if (data.kind === "limit") {
+      showLimitBanner(data.error || "", "bridge");
+      throw new Error("구독 사용량 한도 도달 — 한도 리셋 후 결재함의 ⚠ 항목 또는 배너의 '모두 재시도'로 이어서 진행하세요");
+    }
+    throw new Error(data.error || "브리지 오류 (" + res.status + ")");
+  }
   return data.result || "";
 }
 
@@ -809,16 +858,24 @@ function simPlan(instruction) {
   return { title: c.title, steps: [{ role: c.role, task: instruction }] };
 }
 
+/* 사장이 첨부한 참고 파일을 프롬프트에 포함 */
+function filesBlock(task) {
+  if (!task.files || !task.files.length) return "";
+  return task.files.map(f =>
+    "\n\n[사장이 첨부한 참고 파일: " + f.name + "]\n" + f.content
+  ).join("") + "\n\n(위 첨부 파일을 참고·반영해 작업하세요.)";
+}
+
 /* 파이프라인 단계별 작업 프롬프트: 이전 단계 산출물을 인수인계 */
 function stepUserPrompt(task) {
-  if (!task.steps) return task.instruction;
+  if (!task.steps) return task.instruction + filesBlock(task);
   const st = task.steps[task.stepIndex];
   let p = "[프로젝트 전체 지시]\n" + task.instruction +
           "\n\n[당신의 담당 단계 (" + (task.stepIndex + 1) + "/" + task.steps.length + ")]\n" + st.instruction;
   task.stepResults.forEach((r, i) => {
     p += "\n\n[" + (i + 1) + "단계 — " + task.steps[i].role + " 산출물]\n" + r;
   });
-  return p;
+  return p + filesBlock(task);
 }
 function simResult(task) {
   return "[시뮬레이션 결과물]\n\n지시: " + task.instruction + "\n담당: " + task.roleName +
@@ -840,7 +897,13 @@ let managerBusy = false;
 function submitInstruction(text) {
   text = (text || "").trim();
   if (!text) return;
-  newTask(text);
+  const task = newTask(text);
+  if (attachedFiles.length) {
+    task.files = attachedFiles;
+    log("lg-in", "📎 참고 파일 " + attachedFiles.length + "개 함께 접수 — " + attachedFiles.map(f => f.name).join(", "));
+    attachedFiles = [];
+    renderFileChips();
+  }
 }
 
 function updateManagerLoop() {
@@ -854,8 +917,10 @@ function updateManagerLoop() {
     try {
       /* 매니저가 실행 계획 수립: 협업이 필요하면 여러 단계로 분해 */
       let plan;
+      const clsInput = task.instruction +
+        (task.files && task.files.length ? "\n(사장이 참고 파일 첨부함: " + task.files.map(f => f.name).join(", ") + ")" : "");
       if (liveMode()) {
-        try { plan = bridgeMode() ? await bridgeClassify(task.instruction) : await aiClassify(task.instruction); }
+        try { plan = bridgeMode() ? await bridgeClassify(clsInput) : await aiClassify(clsInput); }
         catch (e) { if (e.message === "PARSE_FAIL") plan = simPlan(task.instruction); else throw e; }
       } else {
         await simDelay(1.4);
@@ -1801,6 +1866,12 @@ async function pollOutbox() {
   if (!bridgeMode() || pollingOutbox) return;
   pollingOutbox = true;
   try {
+    /* 브리지가 기억하는 한도 상태 확인 → 배너 표시/해제 */
+    try {
+      const ping = await bridgeGet("/ping");
+      if (ping.limit && ping.limit.message) showLimitBanner(ping.limit.message, "bridge");
+      else if (limitSource === "bridge") hideLimitBanner();
+    } catch (_) {}
     const items = (await bridgeGet("/outbox")).items || [];
     if (items.length) {
       for (const it of items) {
@@ -1822,6 +1893,56 @@ async function pollOutbox() {
 }
 setInterval(pollOutbox, 60 * 1000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) pollOutbox(); });
+
+/* ── 사용량 한도 배너 ── */
+let limitSource = null;
+function showLimitBanner(detail, source) {
+  limitSource = source || "bridge";
+  document.getElementById("limitDetail").textContent = detail || "";
+  document.getElementById("limitBanner").classList.add("show");
+}
+function hideLimitBanner() {
+  document.getElementById("limitBanner").classList.remove("show");
+  limitSource = null;
+}
+document.getElementById("btnLimitClose").addEventListener("click", hideLimitBanner);
+document.getElementById("btnRetryAll").addEventListener("click", () => {
+  const failed = tasks.filter(t => t.state === "failed");
+  if (!failed.length) { log("lg-work", "재시도할 실패 작업이 없습니다"); hideLimitBanner(); return; }
+  hideLimitBanner();
+  log("lg-assign", "🔁 실패 작업 " + failed.length + "건 일괄 재시도");
+  failed.forEach(retryTask);
+});
+
+/* ── 참고 파일 첨부 ── */
+let attachedFiles = [];
+const fileChipsEl = document.getElementById("fileChips");
+function renderFileChips() {
+  fileChipsEl.innerHTML = "";
+  for (const f of attachedFiles) {
+    const chip = document.createElement("span");
+    chip.className = "file-chip";
+    const name = document.createElement("b"); name.textContent = "📄 " + f.name;
+    const size = document.createElement("span"); size.textContent = Math.max(1, Math.round(f.content.length / 1024)) + "KB";
+    const x = document.createElement("button"); x.textContent = "✖"; x.title = "첨부 제거";
+    x.addEventListener("click", () => { attachedFiles = attachedFiles.filter(v => v !== f); renderFileChips(); });
+    chip.append(name, size, x);
+    fileChipsEl.appendChild(chip);
+  }
+}
+document.getElementById("btnAttach").addEventListener("click", () => document.getElementById("fileInput").click());
+document.getElementById("fileInput").addEventListener("change", async e => {
+  for (const file of Array.from(e.target.files)) {
+    if (attachedFiles.length >= 3) { log("lg-err", "⚠ 첨부는 3개까지 가능합니다"); break; }
+    if (file.size > 400 * 1024) { log("lg-err", "⚠ " + file.name + " — 400KB 이하 파일만 첨부할 수 있습니다"); continue; }
+    const text = await file.text();
+    if (/[\u0000\uFFFD]/.test(text.slice(0, 2000))) { log("lg-err", "⚠ " + file.name + " — 텍스트 파일(txt·md·csv·json·html)만 지원합니다"); continue; }
+    attachedFiles.push({ name: file.name, content: text.slice(0, 100000) });
+    log("lg-in", "📎 파일 첨부 — " + file.name);
+  }
+  e.target.value = "";
+  renderFileChips();
+});
 
 /* ── command bar / controls ── */
 const cmdInput = document.getElementById("cmdInput");
